@@ -11,3 +11,7 @@ node_modules/
 dist/
 build/
 coverage/
+
+# Local Codex/project instruction docs
+AGENTS.md
+docs/basecamp.md
