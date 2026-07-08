@@ -1,0 +1,25 @@
+[project]
+name = "basecamp-api"
+version = "0.0.0"
+description = "FastAPI backend for Basecamp."
+requires-python = ">=3.12"
+dependencies = [
+  "alembic>=1.13",
+  "fastapi>=0.115",
+  "psycopg[binary]>=3.2",
+  "pydantic-settings>=2.6",
+  "pyjwt>=2.9",
+  "sqlalchemy>=2.0",
+  "uvicorn[standard]>=0.32"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
