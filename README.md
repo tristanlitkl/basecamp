@@ -2,10 +2,25 @@
 
 Basecamp is a real-time collaborative group outing planner.
 
-This repository is bootstrapped with the canonical monorepo layout from the roadmap:
+## Local Setup
 
-- `apps/web` for the Next.js frontend
-- `apps/api` for the FastAPI backend
-- `docs` for architecture, guardrails, and product references
+```bash
+cp .env.example .env
+docker compose up --build
+```
 
-This pass creates stable paths only. Phase implementation happens one roadmap phase at a time.
+If another local Postgres is already using port `5432`, set `POSTGRES_PORT=5433`
+in `.env` and rerun `docker compose up --build`. The backend still connects to
+the Compose Postgres service on container port `5432`.
+
+Confirm the API health check:
+
+```bash
+curl http://localhost:8000/health
+```
+
+Expected response:
+
+```json
+{"status":"ok"}
+```

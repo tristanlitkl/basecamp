@@ -11,6 +11,9 @@ node_modules/
 dist/
 build/
 coverage/
+apps/api/.env
+apps/web/.env.local
+apps/web/.env
 
 # Local Codex/project instruction docs
 AGENTS.md

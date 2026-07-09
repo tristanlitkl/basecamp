@@ -1,14 +1,29 @@
 services:
   postgres:
     image: postgres:16
+    env_file:
+      - .env
     environment:
-      POSTGRES_DB: basecamp
-      POSTGRES_USER: basecamp
-      POSTGRES_PASSWORD: basecamp
+      POSTGRES_DB: ${POSTGRES_DB:-basecamp}
+      POSTGRES_USER: ${POSTGRES_USER:-basecamp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-basecamp}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./apps/api
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./apps/api:/app
+    command: python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 volumes:
   postgres_data:

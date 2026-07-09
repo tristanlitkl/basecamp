@@ -1,1 +1,5 @@
-"""Basecamp API configuration module reserved for Phase 0."""
+"""Compatibility import for Basecamp settings."""
+
+from app.config import Settings, get_settings
+
+__all__ = ["Settings", "get_settings"]
