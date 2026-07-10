@@ -36,6 +36,43 @@ export type PlanDetail = PlanSummary & {
   activities: ActivitySummary[];
 };
 
+export type PlanMember = {
+  id: string;
+  plan_id: string;
+  user_id: string;
+  role: string;
+  email: string;
+  display_name: string;
+  created_at: string;
+};
+
+export type PlanEvent = {
+  id: string;
+  plan_id: string;
+  actor_id: string | null;
+  event_type: string;
+  payload_json: Record<string, unknown>;
+  resource_type: string;
+  resource_id: string | null;
+  resource_version_after: number | null;
+  client_operation_id: string | null;
+  created_at: string;
+};
+
+export type ResyncSnapshot = {
+  plan: PlanSummary;
+  members: PlanMember[];
+  activities: ActivitySummary[];
+  activity_scores: Record<string, { yes: number; maybe: number; no: number }>;
+  itinerary_items: Record<string, unknown>[];
+  votes: Record<string, unknown>[];
+  expenses: Record<string, unknown>[];
+  expense_splits: Record<string, unknown>[];
+  ledger_entries: Record<string, unknown>[];
+  latest_plan_events: PlanEvent[];
+  server_version: number;
+};
+
 export type CreateActivityInput = {
   name: string;
   description?: string;

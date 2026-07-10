@@ -7,14 +7,16 @@ dependencies = [
   "alembic>=1.13",
   "asyncpg>=0.30",
   "fastapi>=0.115",
+  "greenlet>=3.5.3",
   "pydantic-settings>=2.6",
   "pyjwt>=2.9",
   "sqlalchemy>=2.0",
-  "uvicorn[standard]>=0.32"
+  "uvicorn[standard]>=0.32",
 ]
 
 [project.optional-dependencies]
 dev = [
+  "httpx>=0.28",
   "pytest>=8.0"
 ]
 

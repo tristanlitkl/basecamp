@@ -14,6 +14,7 @@ from app.db.base import get_session
 from app.models.invite import PlanInvite
 from app.models.plan import Plan, PlanMember
 from app.models.user import User
+from app.services.event_service import append_plan_event
 
 router = APIRouter(tags=["invites"])
 
@@ -49,6 +50,16 @@ async def create_invite(
         token_hash=hash_invite_token(token),
     )
     session.add(invite)
+    await session.flush()
+    await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=owner_membership.user_id,
+        event_type="invite.created",
+        resource_type="invite",
+        resource_id=invite.id,
+        resource_version_after=None,
+    )
     await session.commit()
     return InviteResponse(token=token, plan_id=plan_id)
 
@@ -72,6 +83,16 @@ async def join_invite(
     if membership is None:
         membership = PlanMember(plan_id=invite.plan_id, user_id=user.id, role="member")
         session.add(membership)
+        await session.flush()
+        await append_plan_event(
+            session,
+            plan_id=invite.plan_id,
+            actor_id=user.id,
+            event_type="member.joined",
+            resource_type="plan_member",
+            resource_id=membership.id,
+            resource_version_after=None,
+        )
         await session.commit()
 
     return JoinResponse(plan_id=invite.plan_id, role=membership.role)

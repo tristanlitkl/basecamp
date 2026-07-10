@@ -9,10 +9,13 @@ import {
   createActivity,
   createInvite,
   deleteActivity,
-  getPlan,
+  resyncPlan,
   syncUser,
   voteActivity
 } from "@/lib/api-client";
+import { connectionLabel } from "@/hooks/useConnectionStatus";
+import { usePlanSocket } from "@/hooks/usePlanSocket";
+import { snapshotToPlanDetail } from "@/hooks/useResyncPlan";
 import type { PlanDetail } from "@/types/api";
 
 export default function PlanPage() {
@@ -24,6 +27,17 @@ export default function PlanPage() {
   const [address, setAddress] = useState("");
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [authFailed, setAuthFailed] = useState(false);
+
+  const socket = usePlanSocket({
+    planId,
+    token: session?.appJwt,
+    onSnapshot: (snapshot) => {
+      setPlan(snapshotToPlanDetail(snapshot));
+      setError(null);
+    },
+    onAuthFailure: () => setAuthFailed(true)
+  });
 
   async function load() {
     const appJwt = session?.appJwt;
@@ -31,7 +45,7 @@ export default function PlanPage() {
       return;
     }
     await syncUser(appJwt);
-    setPlan(await getPlan(appJwt, planId));
+    setPlan(snapshotToPlanDetail(await resyncPlan(appJwt, planId)));
   }
 
   useEffect(() => {
@@ -76,6 +90,27 @@ export default function PlanPage() {
       <Link href="/dashboard">Dashboard</Link>
       <h1>{plan?.title ?? "Plan"}</h1>
       {plan && <p>Role: {plan.role}</p>}
+      <section
+        style={{
+          border: "1px solid #ccc",
+          padding: 12,
+          margin: "16px 0",
+          background: socket.connectionState === "restored" ? "#eefaf0" : "#fff8e8"
+        }}
+      >
+        <strong>{connectionLabel(socket.connectionState)}</strong>
+        {socket.nextRetryMs !== null && <span> Next retry in {Math.ceil(socket.nextRetryMs / 1000)}s.</span>}
+        {socket.connectionState === "unavailable" && (
+          <button type="button" onClick={socket.retry} style={{ marginLeft: 12 }}>
+            Retry
+          </button>
+        )}
+        {authFailed && (
+          <button type="button" onClick={() => signIn("google")} style={{ marginLeft: 12 }}>
+            Sign in again
+          </button>
+        )}
+      </section>
       {error && <p style={{ color: "crimson" }}>{error}</p>}
 
       <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>

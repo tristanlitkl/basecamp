@@ -1,5 +1,8 @@
 """Plan routes."""
 
+from datetime import datetime
+from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -10,9 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, require_plan_member
 from app.db.base import get_session
 from app.models.activity import Activity
+from app.models.event import PlanEvent
+from app.models.expense import Expense, ExpenseSplit
+from app.models.itinerary import ItineraryItem
+from app.models.ledger import LedgerEntry
 from app.models.plan import Plan, PlanMember
 from app.models.user import User
 from app.models.vote import ActivityVote
+from app.services.event_service import append_plan_event
 
 router = APIRouter(tags=["plans"])
 
@@ -55,6 +63,20 @@ class PlanDetail(PlanSummary):
     activities: list[ActivitySummary]
 
 
+class ResyncSnapshot(BaseModel):
+    plan: dict[str, Any]
+    members: list[dict[str, Any]]
+    activities: list[dict[str, Any]]
+    activity_scores: dict[str, dict[str, int]]
+    itinerary_items: list[dict[str, Any]]
+    votes: list[dict[str, Any]]
+    expenses: list[dict[str, Any]]
+    expense_splits: list[dict[str, Any]]
+    ledger_entries: list[dict[str, Any]]
+    latest_plan_events: list[dict[str, Any]]
+    server_version: int
+
+
 def serialize_plan(plan: Plan, role: str) -> PlanSummary:
     return PlanSummary(
         id=plan.id,
@@ -65,6 +87,66 @@ def serialize_plan(plan: Plan, role: str) -> PlanSummary:
         version=plan.version,
         planning_version=plan.planning_version,
     )
+
+
+def scalar(value: Any) -> Any:
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return str(value)
+    return value
+
+
+def plan_dict(plan: Plan, role: str) -> dict[str, Any]:
+    return {key: scalar(value) for key, value in serialize_plan(plan, role).model_dump().items()}
+
+
+def activity_dict(activity: Activity) -> dict[str, Any]:
+    return {
+        "id": str(activity.id),
+        "plan_id": str(activity.plan_id),
+        "name": activity.name,
+        "description": activity.description,
+        "address": activity.address,
+        "location_name": activity.location_name,
+        "lat": scalar(activity.lat),
+        "lng": scalar(activity.lng),
+        "estimated_cost_cents": activity.estimated_cost_cents,
+        "estimated_duration_minutes": activity.estimated_duration_minutes,
+        "tags": activity.tags or [],
+        "notes": activity.notes,
+        "created_by_user_id": str(activity.created_by_user_id),
+        "created_at": scalar(activity.created_at),
+        "updated_at": scalar(activity.updated_at),
+    }
+
+
+def vote_dict(vote: ActivityVote) -> dict[str, Any]:
+    return {
+        "id": str(vote.id),
+        "activity_id": str(vote.activity_id),
+        "user_id": str(vote.user_id),
+        "vote": vote.vote,
+        "created_at": scalar(vote.created_at),
+        "updated_at": scalar(vote.updated_at),
+    }
+
+
+def event_dict(event: PlanEvent) -> dict[str, Any]:
+    return {
+        "id": str(event.id),
+        "plan_id": str(event.plan_id),
+        "actor_id": str(event.actor_id) if event.actor_id else None,
+        "event_type": event.event_type,
+        "payload_json": event.payload_json,
+        "resource_type": event.resource_type,
+        "resource_id": str(event.resource_id) if event.resource_id else None,
+        "resource_version_after": event.resource_version_after,
+        "client_operation_id": event.client_operation_id,
+        "created_at": scalar(event.created_at),
+    }
 
 
 @router.get("/plans", response_model=list[PlanSummary])
@@ -98,6 +180,16 @@ async def create_plan(
 
     membership = PlanMember(plan_id=plan.id, user_id=user.id, role="owner")
     session.add(membership)
+    await append_plan_event(
+        session,
+        plan_id=plan.id,
+        actor_id=user.id,
+        event_type="plan.created",
+        resource_type="plan",
+        resource_id=plan.id,
+        resource_version_after=plan.version,
+        payload_json={"title": plan.title},
+    )
     await session.commit()
     await session.refresh(plan)
     return serialize_plan(plan, "owner")
@@ -152,3 +244,154 @@ async def get_plan(
 
     base = serialize_plan(plan, membership.role)
     return PlanDetail(**base.model_dump(), activities=summaries)
+
+
+@router.get("/plans/{plan_id}/resync", response_model=ResyncSnapshot)
+async def resync_plan(
+    plan_id: UUID,
+    membership: PlanMember = Depends(require_plan_member),
+    session: AsyncSession = Depends(get_session),
+) -> ResyncSnapshot:
+    result = await session.execute(select(Plan).where(Plan.id == plan_id))
+    plan = result.scalar_one_or_none()
+    if plan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error": "plan_not_found"})
+
+    member_rows = (
+        await session.execute(
+            select(PlanMember, User)
+            .join(User, User.id == PlanMember.user_id)
+            .where(PlanMember.plan_id == plan_id)
+            .order_by(PlanMember.created_at.asc())
+        )
+    ).all()
+    activities = (
+        await session.execute(
+            select(Activity).where(Activity.plan_id == plan_id).order_by(Activity.created_at.asc())
+        )
+    ).scalars().all()
+    activity_ids = [activity.id for activity in activities]
+
+    votes = []
+    if activity_ids:
+        votes = (
+            await session.execute(
+                select(ActivityVote)
+                .where(ActivityVote.activity_id.in_(activity_ids))
+                .order_by(ActivityVote.created_at.asc())
+            )
+        ).scalars().all()
+
+    itinerary_items = (
+        await session.execute(
+            select(ItineraryItem).where(ItineraryItem.plan_id == plan_id).order_by(ItineraryItem.created_at.asc())
+        )
+    ).scalars().all()
+    expenses = (
+        await session.execute(select(Expense).where(Expense.plan_id == plan_id).order_by(Expense.created_at.asc()))
+    ).scalars().all()
+    expense_ids = [expense.id for expense in expenses]
+    expense_splits = []
+    if expense_ids:
+        expense_splits = (
+            await session.execute(
+                select(ExpenseSplit)
+                .where(ExpenseSplit.expense_id.in_(expense_ids))
+                .order_by(ExpenseSplit.created_at.asc())
+            )
+        ).scalars().all()
+    ledger_entries = (
+        await session.execute(
+            select(LedgerEntry).where(LedgerEntry.plan_id == plan_id).order_by(LedgerEntry.created_at.asc())
+        )
+    ).scalars().all()
+    events = (
+        await session.execute(
+            select(PlanEvent)
+            .where(PlanEvent.plan_id == plan_id)
+            .order_by(PlanEvent.created_at.desc())
+            .limit(50)
+        )
+    ).scalars().all()
+
+    activity_scores = {
+        str(activity.id): {
+            "yes": sum(1 for vote in votes if vote.activity_id == activity.id and vote.vote == "yes"),
+            "maybe": sum(1 for vote in votes if vote.activity_id == activity.id and vote.vote == "maybe"),
+            "no": sum(1 for vote in votes if vote.activity_id == activity.id and vote.vote == "no"),
+        }
+        for activity in activities
+    }
+
+    return ResyncSnapshot(
+        plan=plan_dict(plan, membership.role),
+        members=[
+            {
+                "id": str(member.id),
+                "plan_id": str(member.plan_id),
+                "user_id": str(member.user_id),
+                "role": member.role,
+                "email": user.email,
+                "display_name": user.display_name,
+                "created_at": scalar(member.created_at),
+            }
+            for member, user in member_rows
+        ],
+        activities=[activity_dict(activity) for activity in activities],
+        activity_scores=activity_scores,
+        itinerary_items=[
+            {
+                "id": str(item.id),
+                "plan_id": str(item.plan_id),
+                "activity_id": str(item.activity_id) if item.activity_id else None,
+                "title": item.title,
+                "position_key": scalar(item.position_key),
+                "starts_at": scalar(item.starts_at),
+                "ends_at": scalar(item.ends_at),
+                "created_at": scalar(item.created_at),
+                "updated_at": scalar(item.updated_at),
+            }
+            for item in itinerary_items
+        ],
+        votes=[vote_dict(vote) for vote in votes],
+        expenses=[
+            {
+                "id": str(expense.id),
+                "plan_id": str(expense.plan_id),
+                "paid_by_user_id": str(expense.paid_by_user_id),
+                "description": expense.description,
+                "amount_cents": expense.amount_cents,
+                "created_at": scalar(expense.created_at),
+                "updated_at": scalar(expense.updated_at),
+            }
+            for expense in expenses
+        ],
+        expense_splits=[
+            {
+                "id": str(split.id),
+                "expense_id": str(split.expense_id),
+                "user_id": str(split.user_id),
+                "amount_cents": split.amount_cents,
+                "status": split.status,
+                "created_at": scalar(split.created_at),
+                "updated_at": scalar(split.updated_at),
+            }
+            for split in expense_splits
+        ],
+        ledger_entries=[
+            {
+                "id": str(entry.id),
+                "plan_id": str(entry.plan_id),
+                "expense_id": str(entry.expense_id) if entry.expense_id else None,
+                "from_user_id": str(entry.from_user_id) if entry.from_user_id else None,
+                "to_user_id": str(entry.to_user_id) if entry.to_user_id else None,
+                "amount_cents": entry.amount_cents,
+                "memo": entry.memo,
+                "reversed_by_entry_id": str(entry.reversed_by_entry_id) if entry.reversed_by_entry_id else None,
+                "created_at": scalar(entry.created_at),
+            }
+            for entry in ledger_entries
+        ],
+        latest_plan_events=[event_dict(event) for event in events],
+        server_version=plan.version,
+    )

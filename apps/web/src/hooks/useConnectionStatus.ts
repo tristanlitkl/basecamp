@@ -1,2 +1,20 @@
-// Reserved for Basecamp connection status tracking.
-export {};
+import type { ConnectionState } from "@/lib/websocket-client";
+
+export function connectionLabel(state: ConnectionState): string {
+  switch (state) {
+    case "connecting":
+      return "Connecting...";
+    case "waking":
+      return "Waking server...";
+    case "reconnecting":
+      return "Reconnecting...";
+    case "syncing":
+      return "Syncing latest plan state...";
+    case "restored":
+      return "Connection restored";
+    case "unavailable":
+      return "Connection unavailable - retry";
+    case "auth_failed":
+      return "Session expired - sign in again";
+  }
+}

@@ -15,6 +15,7 @@ from app.models.activity import Activity
 from app.models.plan import PlanMember
 from app.models.user import User
 from app.models.vote import ActivityVote
+from app.services.event_service import append_plan_event
 
 router = APIRouter(tags=["activities"])
 
@@ -83,6 +84,17 @@ async def create_activity(
         created_by_user_id=user.id,
     )
     session.add(activity)
+    await session.flush()
+    await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        event_type="activity.created",
+        resource_type="activity",
+        resource_id=activity.id,
+        resource_version_after=None,
+        payload_json={"name": activity.name},
+    )
     await session.commit()
     await session.refresh(activity)
     return ActivityResponse(id=activity.id, plan_id=activity.plan_id, name=activity.name)
@@ -101,6 +113,15 @@ async def delete_activity(
 
     await session.execute(delete(ActivityVote).where(ActivityVote.activity_id == activity_id))
     await session.execute(delete(Activity).where(Activity.id == activity_id, Activity.plan_id == plan_id))
+    await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=owner_membership.user_id,
+        event_type="activity.deleted",
+        resource_type="activity",
+        resource_id=activity_id,
+        resource_version_after=None,
+    )
     await session.commit()
 
 
@@ -129,5 +150,15 @@ async def vote_activity(
         )
     )
     await session.execute(statement)
+    await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        event_type="activity.vote_updated",
+        resource_type="activity_vote",
+        resource_id=activity_id,
+        resource_version_after=None,
+        payload_json={"vote": payload.vote},
+    )
     await session.commit()
     return VoteResponse(activity_id=activity_id, vote=payload.vote)

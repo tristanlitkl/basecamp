@@ -5,6 +5,7 @@ from app.models.expense import Expense, ExpenseSplit
 from app.models.invite import PlanInvite
 from app.models.itinerary import ItineraryItem
 from app.models.ledger import LedgerEntry
+from app.models.event import PlanEvent
 from app.models.plan import Plan, PlanMember
 from app.models.user import User
 from app.models.vote import ActivityVote
@@ -17,6 +18,7 @@ __all__ = [
     "ItineraryItem",
     "LedgerEntry",
     "Plan",
+    "PlanEvent",
     "PlanInvite",
     "PlanMember",
     "User",

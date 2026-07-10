@@ -1,5 +1,5 @@
 import { apiBaseUrl } from "@/lib/env";
-import type { CreateActivityInput, PlanDetail, PlanSummary, User } from "@/types/api";
+import type { CreateActivityInput, PlanDetail, PlanSummary, ResyncSnapshot, User } from "@/types/api";
 
 type RequestOptions = {
   method?: string;
@@ -18,7 +18,7 @@ async function apiFetch<T>(token: string, path: string, options: RequestOptions 
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({ error: "request_failed" }));
-    throw new Error(JSON.stringify(errorBody));
+    throw new Error(`${response.status} ${JSON.stringify(errorBody)}`);
   }
 
   if (response.status === 204) {
@@ -49,6 +49,10 @@ export function createPlan(
 
 export function getPlan(token: string, planId: string): Promise<PlanDetail> {
   return apiFetch<PlanDetail>(token, `/plans/${planId}`);
+}
+
+export function resyncPlan(token: string, planId: string): Promise<ResyncSnapshot> {
+  return apiFetch<ResyncSnapshot>(token, `/plans/${planId}/resync`);
 }
 
 export function createInvite(token: string, planId: string): Promise<{ token: string; plan_id: string }> {
