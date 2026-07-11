@@ -56,7 +56,7 @@ export default function DashboardPage() {
       <main className="auth-shell">
         <section className="card card-pad auth-card stack">
           <div className="brand"><span className="brand-mark">B</span> Basecamp</div>
-          <div><p className="eyebrow">Plan together</p><h1>Your next great day starts here.</h1><p className="muted">Sign in to coordinate activities, dates, and shared expenses with your group.</p></div>
+          <div><p className="eyebrow">Plan the next outing</p><h1>Your next great day starts here.</h1><p className="muted">Sign in to coordinate ideas, dates, and shared expenses with your group.</p></div>
         <button className="btn" type="button" onClick={() => signIn("google")}>
           Sign in with Google
         </button>
@@ -73,17 +73,17 @@ export default function DashboardPage() {
       </header>
       <section className="split" style={{ marginBottom: 24 }}>
         <div>
-          <p className="eyebrow">Your plans</p>
-          <h1>Welcome{displayName ? `, ${displayName}` : ""}.</h1>
-          <p className="muted">Bring the group together and turn ideas into an actual plan.</p>
+          <p className="eyebrow">Your shared outings</p>
+          <h1>Ready to chart the next plan{displayName ? `, ${displayName}` : ""}?</h1>
+          <p className="muted">Bring the group together and turn ideas into a trip everyone can follow.</p>
         </div>
-        <form onSubmit={submit} className="cluster">
-          <label className="field"><span className="muted">New plan title</span><input aria-label="Plan title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Friday dinner" /></label>
-          <button className="btn" type="submit">Create plan</button>
+        <form onSubmit={submit} className="cluster create-plan">
+          <label className="field"><span className="muted">Start a shared plan</span><input aria-label="Plan title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Friday dinner" /></label>
+          <button className="btn" type="submit"><span aria-hidden="true">↗</span> Create plan</button>
         </form>
       </section>
 
-      <section className="card section-card">
+      <section className="card section-card profile-card">
         <div className="section-heading"><div><h2>Profile</h2><p className="muted small">This name is shown to people you plan with.</p></div><span className="badge">{session.user?.email}</span></div>
         <form onSubmit={async (event) => { event.preventDefault(); if (!session?.appJwt) return; try { const user = await updateDisplayName(session.appJwt, displayName); setDisplayName(user.display_name); } catch { setError("Unable to save your Basecamp name."); } }} className="cluster">
           <label className="field" style={{ flex: 1 }}>Your name in Basecamp <input value={displayName} maxLength={50} onChange={(event) => setDisplayName(event.target.value)} /></label>
@@ -97,8 +97,9 @@ export default function DashboardPage() {
         {plans.map((plan) => (
           <Link className="card plan-card" key={plan.id} href={`/plans/${plan.id}`}>
             <div className="split"><strong>{plan.title}</strong><span className={`badge badge-${plan.role}`}>{plan.role.replace("_", "-")}</span></div>
-            <span className="muted small">Open the shared workspace for activities, dates, and expenses.</span>
-            <span className="cluster" style={{ color: "var(--brand)", fontWeight: 750 }}>Open plan <span aria-hidden="true">→</span></span>
+            <span className="muted small">A shared itinerary for ideas, timing, and the group tab.</span>
+            <span className="plan-card-meta"><span className={`badge badge-${plan.status}`}>{plan.status}</span>{plan.starts_on && <span className="chip"><span aria-hidden="true">◷</span> {new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(plan.starts_on))}</span>}</span>
+            <span className="cluster plan-card-link">Open trip plan <span aria-hidden="true">→</span></span>
           </Link>
         ))}
         {plans.length === 0 && <div className="empty" style={{ gridColumn: "1 / -1" }}><strong>No plans yet</strong><p>Create your first plan above and invite your group.</p></div>}

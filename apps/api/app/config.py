@@ -13,7 +13,14 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> list[str]:
-        return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
+        # Browser origins never include a trailing slash. Normalizing the
+        # deployment setting keeps an explicitly configured Vercel origin from
+        # being accidentally rejected when it is entered with one.
+        return [
+            origin.strip().rstrip("/")
+            for origin in self.cors_allowed_origins.split(",")
+            if origin.strip()
+        ]
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../../.env"),
