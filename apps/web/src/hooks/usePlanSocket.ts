@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { isAuthenticationError, isPlanMembershipError, resyncPlan } from "@/lib/api-client";
+import {
+  isAuthenticationError,
+  isPlanMembershipError,
+  refreshAppJwt,
+  resyncPlan
+} from "@/lib/api-client";
 import {
   calculateReconnectDelay,
   COLD_START_NOTICE_MS,
@@ -21,6 +26,7 @@ type UsePlanSocketOptions = {
   onSnapshot: (snapshot: ResyncSnapshot) => void;
   onAuthFailure: () => void;
   onAuthorizationFailure?: () => void;
+  refreshToken?: () => Promise<string | undefined>;
 };
 
 export function usePlanSocket({
@@ -28,7 +34,8 @@ export function usePlanSocket({
   token,
   onSnapshot,
   onAuthFailure,
-  onAuthorizationFailure
+  onAuthorizationFailure,
+  refreshToken = refreshAppJwt
 }: UsePlanSocketOptions) {
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   const [nextRetryMs, setNextRetryMs] = useState<number | null>(null);
@@ -40,6 +47,12 @@ export function usePlanSocket({
   const disposedRef = useRef(false);
   const generationRef = useRef(0);
   const terminalRef = useRef(false);
+  const tokenRef = useRef<string | undefined>(token);
+  const propTokenRef = useRef<string | undefined>(token);
+  const activeTokenRef = useRef<string | undefined>(undefined);
+  const refreshGenerationRef = useRef<number | null>(null);
+  const refreshTokenRef = useRef(refreshToken);
+  refreshTokenRef.current = refreshToken;
   const callbacksRef = useRef({ onSnapshot, onAuthFailure, onAuthorizationFailure });
   callbacksRef.current = { onSnapshot, onAuthFailure, onAuthorizationFailure };
 
@@ -54,6 +67,7 @@ export function usePlanSocket({
 
   const connectRef = useRef<(manual?: boolean) => void>(() => undefined);
   const enterAuthenticationFailedRef = useRef<() => void>(() => undefined);
+  const refreshAuthenticationRef = useRef<(generation: number) => Promise<void>>(async () => undefined);
   enterAuthenticationFailedRef.current = () => {
     if (terminalRef.current) return;
     terminalRef.current = true;
@@ -91,11 +105,37 @@ export function usePlanSocket({
     callbacksRef.current.onAuthorizationFailure?.();
   };
 
+  refreshAuthenticationRef.current = async (generation: number) => {
+    if (disposedRef.current || terminalRef.current || generation !== generationRef.current) return;
+    if (refreshGenerationRef.current === generation) return;
+    refreshGenerationRef.current = generation;
+    try {
+      const refreshedToken = await refreshTokenRef.current();
+      if (
+        !refreshedToken ||
+        refreshedToken === tokenRef.current ||
+        disposedRef.current ||
+        terminalRef.current ||
+        generation !== generationRef.current
+      ) {
+        enterAuthenticationFailedRef.current();
+        return;
+      }
+      tokenRef.current = refreshedToken;
+      activeTokenRef.current = undefined;
+      attemptRef.current = 0;
+      connectRef.current(true);
+    } catch {
+      enterAuthenticationFailedRef.current();
+    }
+  };
+
   connectRef.current = (manual = false) => {
     if (disposedRef.current || terminalRef.current) return;
     clearTimers();
 
-    if (!token) {
+    const currentToken = tokenRef.current;
+    if (!currentToken) {
       enterAuthenticationFailedRef.current();
       return;
     }
@@ -119,7 +159,8 @@ export function usePlanSocket({
       if (isCurrent() && attemptRef.current === 0) setConnectionState("waking");
     }, COLD_START_NOTICE_MS);
 
-    const socket = new WebSocket(planWebSocketUrl(planId, token));
+    const socket = new WebSocket(planWebSocketUrl(planId, currentToken));
+    activeTokenRef.current = currentToken;
     socketRef.current = socket;
 
     handshakeTimerRef.current = setTimeout(() => {
@@ -140,7 +181,7 @@ export function usePlanSocket({
       clearTimers();
       setConnectionState("syncing");
       try {
-        const snapshot = await resyncPlan(token, planId);
+        const snapshot = await resyncPlan(currentToken, planId);
         if (!isCurrent()) return;
         callbacksRef.current.onSnapshot(snapshot);
         attemptRef.current = 0;
@@ -148,7 +189,7 @@ export function usePlanSocket({
       } catch (error) {
         if (!isCurrent()) return;
         if (isAuthenticationError(error)) {
-          enterAuthenticationFailedRef.current();
+          await refreshAuthenticationRef.current(generation);
           return;
         }
         if (isPlanMembershipError(error)) {
@@ -165,7 +206,7 @@ export function usePlanSocket({
       clearTimers();
 
       if (isAuthenticationFailureClose(event)) {
-        enterAuthenticationFailedRef.current();
+        await refreshAuthenticationRef.current(generation);
         return;
       }
       if (isAuthorizationFailureClose(event)) {
@@ -176,11 +217,11 @@ export function usePlanSocket({
       // when the backend knows the app JWT is expired. Classify that close once
       // through the authoritative REST endpoint before applying network backoff.
       try {
-        await resyncPlan(token, planId);
+        await resyncPlan(currentToken, planId);
       } catch (error) {
         if (!isCurrent()) return;
         if (isAuthenticationError(error)) {
-          enterAuthenticationFailedRef.current();
+          await refreshAuthenticationRef.current(generation);
           return;
         }
         if (isPlanMembershipError(error)) {
@@ -226,7 +267,17 @@ export function usePlanSocket({
         socket.close();
       }
     };
-  }, [clearTimers, planId, token]);
+  }, [clearTimers, planId]);
+
+  useEffect(() => {
+    if (token === propTokenRef.current) return;
+    propTokenRef.current = token;
+    tokenRef.current = token;
+    if (!token || token === activeTokenRef.current) return;
+    terminalRef.current = false;
+    attemptRef.current = 0;
+    connectRef.current(true);
+  }, [token]);
 
   const retry = useCallback(() => connectRef.current(true), []);
   const denyAuthentication = useCallback(() => enterAuthenticationFailedRef.current(), []);

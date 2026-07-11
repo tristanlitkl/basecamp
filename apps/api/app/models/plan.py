@@ -18,6 +18,12 @@ class Plan(Base):
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     budget_cents: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="draft", server_default="draft"
+    )
+    starts_on: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ends_on: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    max_drive_minutes: Mapped[int | None] = mapped_column(Integer)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     planning_version: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default="1"

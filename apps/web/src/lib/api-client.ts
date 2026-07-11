@@ -1,3 +1,5 @@
+import { getSession } from "next-auth/react";
+
 import { apiBaseUrl } from "@/lib/env";
 import type { CreateActivityInput, PlanDetail, PlanSummary, ResyncSnapshot, User } from "@/types/api";
 
@@ -26,7 +28,7 @@ export function isPlanMembershipError(error: unknown): boolean {
   return body?.detail?.error === "plan_membership_required";
 }
 
-async function apiFetch<T>(token: string, path: string, options: RequestOptions = {}): Promise<T> {
+async function sendApiRequest<T>(token: string, path: string, options: RequestOptions): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: options.method ?? "GET",
     headers: {
@@ -46,6 +48,23 @@ async function apiFetch<T>(token: string, path: string, options: RequestOptions 
   }
 
   return response.json() as Promise<T>;
+}
+
+/** Refetches Auth.js session state; its server-side JWT callback mints a fresh app JWT if needed. */
+export async function refreshAppJwt(): Promise<string | undefined> {
+  const session = await getSession();
+  return session?.appJwt;
+}
+
+async function apiFetch<T>(token: string, path: string, options: RequestOptions = {}): Promise<T> {
+  try {
+    return await sendApiRequest<T>(token, path, options);
+  } catch (error) {
+    if (!isAuthenticationError(error)) throw error;
+    const refreshedToken = await refreshAppJwt();
+    if (!refreshedToken || refreshedToken === token) throw error;
+    return sendApiRequest<T>(refreshedToken, path, options);
+  }
 }
 
 export function syncUser(token: string): Promise<User> {

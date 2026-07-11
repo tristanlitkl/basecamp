@@ -3,6 +3,7 @@
 from app.models.activity import Activity
 from app.models.expense import Expense, ExpenseSplit
 from app.models.invite import PlanInvite
+from app.models.idempotency import IdempotencyRecord
 from app.models.itinerary import ItineraryItem
 from app.models.ledger import LedgerEntry
 from app.models.event import PlanEvent
@@ -16,6 +17,7 @@ __all__ = [
     "Expense",
     "ExpenseSplit",
     "ItineraryItem",
+    "IdempotencyRecord",
     "LedgerEntry",
     "Plan",
     "PlanEvent",

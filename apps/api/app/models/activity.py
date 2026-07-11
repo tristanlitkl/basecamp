@@ -26,6 +26,7 @@ class Activity(Base):
     estimated_duration_minutes: Mapped[int | None] = mapped_column(Integer)
     tags: Mapped[list[str] | None] = mapped_column(JSON)
     notes: Mapped[str | None] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     created_by_user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

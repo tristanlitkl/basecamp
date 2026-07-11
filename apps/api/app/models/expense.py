@@ -18,6 +18,10 @@ class Expense(Base):
     paid_by_user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="active", server_default="active"
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -28,7 +32,9 @@ class Expense(Base):
 
 class ExpenseSplit(Base):
     __tablename__ = "expense_splits"
-    __table_args__ = (UniqueConstraint("expense_id", "user_id", name="uq_expense_splits_expense_user"),)
+    __table_args__ = (
+        UniqueConstraint("expense_id", "user_id", name="uq_expense_splits_expense_user"),
+    )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     expense_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("expenses.id"), nullable=False)

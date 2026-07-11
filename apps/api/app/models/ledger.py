@@ -20,9 +20,7 @@ class LedgerEntry(Base):
     to_user_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("users.id"))
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     memo: Mapped[str | None] = mapped_column(Text)
-    reversed_by_entry_id: Mapped[UUID | None] = mapped_column(
-        Uuid, ForeignKey("ledger_entries.id")
-    )
+    reversed_by_entry_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("ledger_entries.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

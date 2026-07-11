@@ -2,12 +2,12 @@ import React, { StrictMode } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { resyncPlan } from "@/lib/api-client";
+import { refreshAppJwt, resyncPlan } from "@/lib/api-client";
 import { usePlanSocket } from "@/hooks/usePlanSocket";
 
 vi.mock("@/lib/api-client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api-client")>();
-  return { ...actual, resyncPlan: vi.fn() };
+  return { ...actual, refreshAppJwt: vi.fn(), resyncPlan: vi.fn() };
 });
 
 class FakeWebSocket {
@@ -62,6 +62,8 @@ describe("usePlanSocket lifecycle", () => {
     FakeWebSocket.instances = [];
     vi.stubGlobal("WebSocket", FakeWebSocket);
     vi.mocked(resyncPlan).mockReset();
+    vi.mocked(refreshAppJwt).mockReset();
+    vi.mocked(refreshAppJwt).mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -171,10 +173,39 @@ describe("usePlanSocket lifecycle", () => {
     expect(resyncPlan).toHaveBeenCalledOnce();
   });
 
-  it("stops for authentication and authorization failures", () => {
+  it("refreshes an expired WebSocket token once, opens one replacement socket, and resyncs once", async () => {
+    vi.mocked(refreshAppJwt).mockResolvedValue("fresh-jwt");
+    vi.mocked(resyncPlan).mockResolvedValue({ plan: {} } as never);
+    const callbacks = options();
+    const { result, rerender } = renderHook((props) => usePlanSocket(props), {
+      initialProps: callbacks
+    });
+
+    await act(async () => {
+      FakeWebSocket.instances[0].fail(1008, "token_expired");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(refreshAppJwt).toHaveBeenCalledOnce();
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(FakeWebSocket.instances[1].url).toContain("token=fresh-jwt");
+
+    rerender({ ...callbacks, token: "fresh-jwt" });
+    expect(FakeWebSocket.instances).toHaveLength(2);
+
+    await act(async () => FakeWebSocket.instances[1].connected());
+    expect(resyncPlan).toHaveBeenCalledOnce();
+    expect(result.current.connectionState).toBe("restored");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("stops for authentication and authorization failures", async () => {
     const auth = options();
     const first = renderHook(() => usePlanSocket(auth));
-    act(() => FakeWebSocket.instances[0].fail(1008, "invalid_token"));
+    await act(async () => {
+      FakeWebSocket.instances[0].fail(1008, "invalid_token");
+      await Promise.resolve();
+    });
     expect(first.result.current.connectionState).toBe("auth_failed");
     expect(auth.onAuthFailure).toHaveBeenCalledOnce();
     expect(vi.getTimerCount()).toBe(0);

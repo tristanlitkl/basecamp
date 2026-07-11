@@ -15,6 +15,7 @@ from app.models.invite import PlanInvite
 from app.models.plan import Plan, PlanMember
 from app.models.user import User
 from app.services.event_service import append_plan_event
+from app.services.planning_service import require_mutable_plan
 
 router = APIRouter(tags=["invites"])
 
@@ -33,15 +34,20 @@ def hash_invite_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-@router.post("/plans/{plan_id}/invites", response_model=InviteResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/plans/{plan_id}/invites", response_model=InviteResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_invite(
     plan_id: UUID,
     owner_membership: PlanMember = Depends(require_plan_owner),
     session: AsyncSession = Depends(get_session),
 ) -> InviteResponse:
+    await require_mutable_plan(session, plan_id)
     result = await session.execute(select(Plan.id).where(Plan.id == plan_id))
     if result.scalar_one_or_none() is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error": "plan_not_found"})
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail={"error": "plan_not_found"}
+        )
 
     token = secrets.token_urlsafe(32)
     invite = PlanInvite(
@@ -74,10 +80,15 @@ async def join_invite(
     result = await session.execute(select(PlanInvite).where(PlanInvite.token_hash == token_hash))
     invite = result.scalar_one_or_none()
     if invite is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error": "invite_not_found"})
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail={"error": "invite_not_found"}
+        )
 
+    await require_mutable_plan(session, invite.plan_id)
     result = await session.execute(
-        select(PlanMember).where(PlanMember.plan_id == invite.plan_id, PlanMember.user_id == user.id)
+        select(PlanMember).where(
+            PlanMember.plan_id == invite.plan_id, PlanMember.user_id == user.id
+        )
     )
     membership = result.scalar_one_or_none()
     if membership is None:

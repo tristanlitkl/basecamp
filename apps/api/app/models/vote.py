@@ -12,7 +12,9 @@ from app.db.base import Base
 
 class ActivityVote(Base):
     __tablename__ = "activity_votes"
-    __table_args__ = (UniqueConstraint("activity_id", "user_id", name="uq_activity_votes_activity_user"),)
+    __table_args__ = (
+        UniqueConstraint("activity_id", "user_id", name="uq_activity_votes_activity_user"),
+    )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     activity_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("activities.id"), nullable=False)

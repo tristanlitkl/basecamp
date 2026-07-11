@@ -2,6 +2,7 @@ import { SignJWT } from "jose";
 
 const issuer = "basecamp-web";
 const audience = "basecamp-api";
+export const APP_JWT_TTL_SECONDS = 60 * 60;
 
 export type AppJwtInput = {
   subject: string;
@@ -24,6 +25,6 @@ export async function signAppJwt(input: AppJwtInput): Promise<string> {
     .setIssuer(issuer)
     .setAudience(audience)
     .setIssuedAt()
-    .setExpirationTime("1h")
+    .setExpirationTime(`${APP_JWT_TTL_SECONDS}s`)
     .sign(new TextEncoder().encode(secret));
 }

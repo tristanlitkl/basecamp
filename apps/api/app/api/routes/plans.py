@@ -7,10 +7,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_plan_member
+from app.api.deps import get_current_user, require_plan_member, require_plan_owner
 from app.db.base import get_session
 from app.models.activity import Activity
 from app.models.event import PlanEvent
@@ -21,6 +21,7 @@ from app.models.plan import Plan, PlanMember
 from app.models.user import User
 from app.models.vote import ActivityVote
 from app.services.event_service import append_plan_event
+from app.services.planning_service import bump_planning_version, require_mutable_plan
 
 router = APIRouter(tags=["plans"])
 
@@ -39,6 +40,21 @@ class PlanSummary(BaseModel):
     role: str
     version: int
     planning_version: int
+    status: str
+
+
+class PlanPatch(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    description: str | None = None
+    budget_cents: int | None = Field(default=None, ge=0)
+    starts_on: datetime | None = None
+    ends_on: datetime | None = None
+    max_drive_minutes: int | None = Field(default=None, ge=0)
+    expected_version: int = Field(ge=1)
+
+
+class LifecycleRequest(BaseModel):
+    expected_version: int = Field(ge=1)
 
 
 class ActivitySummary(BaseModel):
@@ -86,6 +102,7 @@ def serialize_plan(plan: Plan, role: str) -> PlanSummary:
         role=role,
         version=plan.version,
         planning_version=plan.planning_version,
+        status=plan.status,
     )
 
 
@@ -117,6 +134,7 @@ def activity_dict(activity: Activity) -> dict[str, Any]:
         "estimated_duration_minutes": activity.estimated_duration_minutes,
         "tags": activity.tags or [],
         "notes": activity.notes,
+        "version": activity.version,
         "created_by_user_id": str(activity.created_by_user_id),
         "created_at": scalar(activity.created_at),
         "updated_at": scalar(activity.updated_at),
@@ -195,6 +213,105 @@ async def create_plan(
     return serialize_plan(plan, "owner")
 
 
+@router.patch("/plans/{plan_id}", response_model=PlanSummary)
+async def patch_plan(
+    plan_id: UUID,
+    payload: PlanPatch,
+    user: User = Depends(get_current_user),
+    membership: PlanMember = Depends(require_plan_owner),
+    session: AsyncSession = Depends(get_session),
+) -> PlanSummary:
+    await require_mutable_plan(session, plan_id)
+    changes = payload.model_dump(exclude={"expected_version"}, exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=422, detail={"error": "no_changes"})
+    result = await session.execute(
+        update(Plan)
+        .where(
+            Plan.id == plan_id, Plan.version == payload.expected_version, Plan.status != "finalized"
+        )
+        .values(**changes, version=Plan.version + 1, updated_at=func.now())
+        .returning(Plan)
+    )
+    plan = result.scalar_one_or_none()
+    if plan is None:
+        raise HTTPException(status_code=409, detail={"error": "version_conflict"})
+    if {"budget_cents", "starts_on", "ends_on", "max_drive_minutes"} & changes.keys():
+        await bump_planning_version(session, plan_id)
+        await session.refresh(plan)
+    await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        event_type="plan.updated",
+        resource_type="plan",
+        resource_id=plan_id,
+        resource_version_after=plan.version,
+    )
+    await session.commit()
+    return serialize_plan(plan, membership.role)
+
+
+async def set_plan_lifecycle(
+    plan_id: UUID,
+    payload: LifecycleRequest,
+    target_status: str,
+    membership: PlanMember,
+    session: AsyncSession,
+) -> PlanSummary:
+    result = await session.execute(
+        update(Plan)
+        .where(
+            Plan.id == plan_id,
+            Plan.version == payload.expected_version,
+            Plan.status != target_status,
+        )
+        .values(
+            status=target_status,
+            version=Plan.version + 1,
+            planning_version=Plan.planning_version + 1,
+            updated_at=func.now(),
+        )
+        .returning(Plan)
+    )
+    plan = result.scalar_one_or_none()
+    if plan is None:
+        raise HTTPException(
+            status_code=409, detail={"error": "version_conflict_or_invalid_lifecycle"}
+        )
+    await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=membership.user_id,
+        event_type=f"plan.{target_status}",
+        resource_type="plan",
+        resource_id=plan_id,
+        resource_version_after=plan.version,
+    )
+    await session.commit()
+    return serialize_plan(plan, membership.role)
+
+
+@router.post("/plans/{plan_id}/finalize", response_model=PlanSummary)
+async def finalize_plan(
+    plan_id: UUID,
+    payload: LifecycleRequest,
+    membership: PlanMember = Depends(require_plan_owner),
+    session: AsyncSession = Depends(get_session),
+) -> PlanSummary:
+    return await set_plan_lifecycle(plan_id, payload, "finalized", membership, session)
+
+
+@router.post("/plans/{plan_id}/unfinalize", response_model=PlanSummary)
+async def unfinalize_plan(
+    plan_id: UUID,
+    payload: LifecycleRequest,
+    membership: PlanMember = Depends(require_plan_owner),
+    session: AsyncSession = Depends(get_session),
+) -> PlanSummary:
+    return await set_plan_lifecycle(plan_id, payload, "draft", membership, session)
+
+
 @router.get("/plans/{plan_id}", response_model=PlanDetail)
 async def get_plan(
     plan_id: UUID,
@@ -204,7 +321,9 @@ async def get_plan(
     result = await session.execute(select(Plan).where(Plan.id == plan_id))
     plan = result.scalar_one_or_none()
     if plan is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error": "plan_not_found"})
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail={"error": "plan_not_found"}
+        )
 
     activity_result = await session.execute(
         select(Activity).where(Activity.plan_id == plan_id).order_by(Activity.created_at.asc())
@@ -212,7 +331,9 @@ async def get_plan(
     activities = activity_result.scalars().all()
 
     vote_result = await session.execute(
-        select(ActivityVote).join(Activity, Activity.id == ActivityVote.activity_id).where(Activity.plan_id == plan_id)
+        select(ActivityVote)
+        .join(Activity, Activity.id == ActivityVote.activity_id)
+        .where(Activity.plan_id == plan_id)
     )
     votes_by_activity: dict[UUID, list[ActivityVote]] = {}
     for vote in vote_result.scalars().all():
@@ -221,7 +342,9 @@ async def get_plan(
     summaries: list[ActivitySummary] = []
     for activity in activities:
         votes = votes_by_activity.get(activity.id, [])
-        current_vote = next((vote.vote for vote in votes if vote.user_id == membership.user_id), None)
+        current_vote = next(
+            (vote.vote for vote in votes if vote.user_id == membership.user_id), None
+        )
         summaries.append(
             ActivitySummary(
                 id=activity.id,
@@ -255,7 +378,9 @@ async def resync_plan(
     result = await session.execute(select(Plan).where(Plan.id == plan_id))
     plan = result.scalar_one_or_none()
     if plan is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error": "plan_not_found"})
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail={"error": "plan_not_found"}
+        )
 
     member_rows = (
         await session.execute(
@@ -266,58 +391,98 @@ async def resync_plan(
         )
     ).all()
     activities = (
-        await session.execute(
-            select(Activity).where(Activity.plan_id == plan_id).order_by(Activity.created_at.asc())
+        (
+            await session.execute(
+                select(Activity)
+                .where(Activity.plan_id == plan_id)
+                .order_by(Activity.created_at.asc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     activity_ids = [activity.id for activity in activities]
 
     votes = []
     if activity_ids:
         votes = (
-            await session.execute(
-                select(ActivityVote)
-                .where(ActivityVote.activity_id.in_(activity_ids))
-                .order_by(ActivityVote.created_at.asc())
+            (
+                await session.execute(
+                    select(ActivityVote)
+                    .where(ActivityVote.activity_id.in_(activity_ids))
+                    .order_by(ActivityVote.created_at.asc())
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     itinerary_items = (
-        await session.execute(
-            select(ItineraryItem).where(ItineraryItem.plan_id == plan_id).order_by(ItineraryItem.created_at.asc())
+        (
+            await session.execute(
+                select(ItineraryItem)
+                .where(ItineraryItem.plan_id == plan_id)
+                .order_by(ItineraryItem.position_key.asc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     expenses = (
-        await session.execute(select(Expense).where(Expense.plan_id == plan_id).order_by(Expense.created_at.asc()))
-    ).scalars().all()
+        (
+            await session.execute(
+                select(Expense).where(Expense.plan_id == plan_id).order_by(Expense.created_at.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
     expense_ids = [expense.id for expense in expenses]
     expense_splits = []
     if expense_ids:
         expense_splits = (
-            await session.execute(
-                select(ExpenseSplit)
-                .where(ExpenseSplit.expense_id.in_(expense_ids))
-                .order_by(ExpenseSplit.created_at.asc())
+            (
+                await session.execute(
+                    select(ExpenseSplit)
+                    .where(ExpenseSplit.expense_id.in_(expense_ids))
+                    .order_by(ExpenseSplit.created_at.asc())
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
     ledger_entries = (
-        await session.execute(
-            select(LedgerEntry).where(LedgerEntry.plan_id == plan_id).order_by(LedgerEntry.created_at.asc())
+        (
+            await session.execute(
+                select(LedgerEntry)
+                .where(LedgerEntry.plan_id == plan_id)
+                .order_by(LedgerEntry.created_at.asc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     events = (
-        await session.execute(
-            select(PlanEvent)
-            .where(PlanEvent.plan_id == plan_id)
-            .order_by(PlanEvent.created_at.desc())
-            .limit(50)
+        (
+            await session.execute(
+                select(PlanEvent)
+                .where(PlanEvent.plan_id == plan_id)
+                .order_by(PlanEvent.created_at.desc())
+                .limit(50)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     activity_scores = {
         str(activity.id): {
-            "yes": sum(1 for vote in votes if vote.activity_id == activity.id and vote.vote == "yes"),
-            "maybe": sum(1 for vote in votes if vote.activity_id == activity.id and vote.vote == "maybe"),
+            "yes": sum(
+                1 for vote in votes if vote.activity_id == activity.id and vote.vote == "yes"
+            ),
+            "maybe": sum(
+                1 for vote in votes if vote.activity_id == activity.id and vote.vote == "maybe"
+            ),
             "no": sum(1 for vote in votes if vote.activity_id == activity.id and vote.vote == "no"),
         }
         for activity in activities
@@ -350,6 +515,7 @@ async def resync_plan(
                 "ends_at": scalar(item.ends_at),
                 "created_at": scalar(item.created_at),
                 "updated_at": scalar(item.updated_at),
+                "version": item.version,
             }
             for item in itinerary_items
         ],
@@ -363,6 +529,8 @@ async def resync_plan(
                 "amount_cents": expense.amount_cents,
                 "created_at": scalar(expense.created_at),
                 "updated_at": scalar(expense.updated_at),
+                "status": expense.status,
+                "version": expense.version,
             }
             for expense in expenses
         ],
@@ -387,7 +555,9 @@ async def resync_plan(
                 "to_user_id": str(entry.to_user_id) if entry.to_user_id else None,
                 "amount_cents": entry.amount_cents,
                 "memo": entry.memo,
-                "reversed_by_entry_id": str(entry.reversed_by_entry_id) if entry.reversed_by_entry_id else None,
+                "reversed_by_entry_id": str(entry.reversed_by_entry_id)
+                if entry.reversed_by_entry_id
+                else None,
                 "created_at": scalar(entry.created_at),
             }
             for entry in ledger_entries
