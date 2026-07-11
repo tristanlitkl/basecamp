@@ -19,7 +19,14 @@ from app.api.deps import (
 from app.db.base import get_session
 from app.models.activity import Activity
 from app.models.coordination import ActivityComment, ActivitySuggestion
-from app.models.plan import Plan, PlanDateAvailability, PlanDateSuggestion, PlanMember
+from app.models.plan import (
+    Plan,
+    PlanDateAvailability,
+    PlanDateSuggestion,
+    PlanDateSuggestionVote,
+    PlanMember,
+    PlanSuggestion,
+)
 from app.models.user import User
 from app.services.planning_service import bump_planning_version, require_mutable_plan
 from app.services.idempotency_service import claim_operation, complete_operation
@@ -89,6 +96,34 @@ class DateSuggestionCreate(BaseModel):
 class DateSuggestionDecision(BaseModel):
     expected_plan_version: int = Field(ge=1)
     client_operation_id: str | None = Field(default=None, max_length=120)
+
+
+class DateSuggestionVoteUpsert(BaseModel):
+    vote: str = Field(pattern="^(yes|maybe|no)$")
+    client_operation_id: str | None = Field(default=None, max_length=120)
+
+
+class PlanSuggestionCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    description: str | None = Field(default=None, max_length=4000)
+    starts_on: date | None = None
+    ends_on: date | None = None
+    budget_cents: int | None = Field(default=None, ge=0)
+    max_drive_minutes: int | None = Field(default=None, ge=0)
+    travel_mode: str | None = Field(default=None, pattern="^(car|plane|train|bus)$")
+    travel_duration_minutes: int | None = Field(default=None, gt=0)
+    client_operation_id: str = Field(max_length=120)
+
+    @model_validator(mode="after")
+    def valid_dates(self) -> "PlanSuggestionCreate":
+        if self.starts_on and self.ends_on and self.starts_on > self.ends_on:
+            raise ValueError("starts_on must be on or before ends_on")
+        return self
+
+
+class PlanSuggestionDecision(BaseModel):
+    expected_plan_version: int = Field(ge=1)
+    client_operation_id: str = Field(max_length=120)
 
 
 def member_response(member: PlanMember, user: User) -> dict[str, Any]:
@@ -555,11 +590,13 @@ async def decide_date_suggestion(
 ) -> dict[str, Any]:
     suggestion = (
         await session.execute(
-            select(PlanDateSuggestion).where(
+            select(PlanDateSuggestion)
+            .where(
                 PlanDateSuggestion.id == suggestion_id,
                 PlanDateSuggestion.plan_id == plan_id,
                 PlanDateSuggestion.status == "open",
             )
+            .with_for_update()
         )
     ).scalar_one_or_none()
     if suggestion is None:
@@ -644,4 +681,203 @@ async def dismiss_date_suggestion(
         return claim
     return await decide_date_suggestion(
         plan_id, suggestion_id, "dismissed", payload, user, session, claim
+    )
+
+
+@router.put("/plans/{plan_id}/date-suggestions/{suggestion_id}/vote")
+async def vote_date_suggestion(
+    plan_id: UUID,
+    suggestion_id: UUID,
+    payload: DateSuggestionVoteUpsert,
+    user: User = Depends(get_current_user),
+    membership: PlanMember = Depends(require_plan_member),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
+    suggestion = (
+        await session.execute(
+            select(PlanDateSuggestion.id).where(
+                PlanDateSuggestion.id == suggestion_id,
+                PlanDateSuggestion.plan_id == plan_id,
+                PlanDateSuggestion.status == "open",
+            )
+        )
+    ).scalar_one_or_none()
+    if suggestion is None:
+        raise HTTPException(status_code=409, detail={"error": "date_suggestion_not_open"})
+    claim = await claim_operation(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        client_operation_id=payload.client_operation_id,
+        payload={"suggestion_id": suggestion_id, "vote": payload.vote},
+        resource_type="date_suggestion_vote",
+    )
+    if isinstance(claim, dict):
+        return claim
+    await session.execute(
+        insert(PlanDateSuggestionVote)
+        .values(plan_id=plan_id, suggestion_id=suggestion_id, user_id=user.id, vote=payload.vote)
+        .on_conflict_do_update(
+            constraint="uq_date_suggestion_vote",
+            set_={"vote": payload.vote, "updated_at": func.now()},
+        )
+    )
+    body = {"suggestion_id": str(suggestion_id), "vote": payload.vote}
+    await complete_operation(
+        session, claim, suggestion_id, body, response_status=status.HTTP_200_OK
+    )
+    await session.commit()
+    return body
+
+
+@router.post("/plans/{plan_id}/plan-suggestions", status_code=status.HTTP_201_CREATED)
+async def create_plan_suggestion(
+    plan_id: UUID,
+    payload: PlanSuggestionCreate,
+    user: User = Depends(get_current_user),
+    membership: PlanMember = Depends(require_plan_member),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
+    request = payload.model_dump(exclude={"client_operation_id"}, mode="json")
+    claim = await claim_operation(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        client_operation_id=payload.client_operation_id,
+        payload=request,
+        resource_type="plan_suggestion",
+    )
+    if isinstance(claim, dict):
+        return claim
+    suggestion = PlanSuggestion(
+        plan_id=plan_id,
+        suggested_by_user_id=user.id,
+        **payload.model_dump(exclude={"client_operation_id"}),
+    )
+    session.add(suggestion)
+    await session.flush()
+    body = {"id": str(suggestion.id), "status": suggestion.status}
+    await complete_operation(
+        session, claim, suggestion.id, body, response_status=status.HTTP_201_CREATED
+    )
+    await session.commit()
+    return body
+
+
+async def decide_plan_suggestion(
+    plan_id: UUID,
+    suggestion_id: UUID,
+    decision: str,
+    payload: PlanSuggestionDecision,
+    user: User,
+    session: AsyncSession,
+    claim: Any,
+) -> dict[str, str]:
+    suggestion = (
+        await session.execute(
+            select(PlanSuggestion)
+            .where(PlanSuggestion.id == suggestion_id, PlanSuggestion.plan_id == plan_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if suggestion is None or suggestion.status != "open":
+        raise HTTPException(status_code=409, detail={"error": "plan_suggestion_not_open"})
+    if decision == "accepted":
+        values: dict[str, Any] = {"title": suggestion.title}
+        for field in (
+            "description",
+            "budget_cents",
+            "max_drive_minutes",
+            "travel_mode",
+            "travel_duration_minutes",
+        ):
+            value = getattr(suggestion, field)
+            if value is not None:
+                values[field] = value
+        if suggestion.starts_on is not None:
+            values["starts_on"] = datetime.combine(
+                suggestion.starts_on, time.min, tzinfo=timezone.utc
+            )
+        if suggestion.ends_on is not None:
+            values["ends_on"] = datetime.combine(suggestion.ends_on, time.min, tzinfo=timezone.utc)
+        result = await session.execute(
+            update(Plan)
+            .where(
+                Plan.id == plan_id,
+                Plan.version == payload.expected_plan_version,
+                Plan.status != "finalized",
+            )
+            .values(
+                **values,
+                version=Plan.version + 1,
+                planning_version=Plan.planning_version + 1,
+                updated_at=func.now(),
+            )
+            .returning(Plan.id)
+        )
+        if result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=409, detail={"error": "version_conflict"})
+    suggestion.status = decision
+    suggestion.reviewed_by_user_id = user.id
+    suggestion.reviewed_at = datetime.now(timezone.utc)
+    body = {"id": str(suggestion.id), "status": decision}
+    await complete_operation(
+        session, claim, suggestion.id, body, response_status=status.HTTP_200_OK
+    )
+    await session.commit()
+    return body
+
+
+async def plan_suggestion_decision_endpoint(
+    plan_id: UUID,
+    suggestion_id: UUID,
+    decision: str,
+    payload: PlanSuggestionDecision,
+    user: User,
+    session: AsyncSession,
+) -> dict[str, str]:
+    claim = await claim_operation(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        client_operation_id=payload.client_operation_id,
+        payload={
+            "suggestion_id": suggestion_id,
+            "decision": decision,
+            "expected_plan_version": payload.expected_plan_version,
+        },
+        resource_type="plan_suggestion_decision",
+    )
+    if isinstance(claim, dict):
+        return claim
+    return await decide_plan_suggestion(
+        plan_id, suggestion_id, decision, payload, user, session, claim
+    )
+
+
+@router.post("/plans/{plan_id}/plan-suggestions/{suggestion_id}/accept")
+async def accept_plan_suggestion(
+    plan_id: UUID,
+    suggestion_id: UUID,
+    payload: PlanSuggestionDecision,
+    user: User = Depends(get_current_user),
+    actor: PlanMember = Depends(require_plan_owner),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
+    return await plan_suggestion_decision_endpoint(
+        plan_id, suggestion_id, "accepted", payload, user, session
+    )
+
+
+@router.post("/plans/{plan_id}/plan-suggestions/{suggestion_id}/dismiss")
+async def dismiss_plan_suggestion(
+    plan_id: UUID,
+    suggestion_id: UUID,
+    payload: PlanSuggestionDecision,
+    user: User = Depends(get_current_user),
+    actor: PlanMember = Depends(require_plan_owner),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
+    return await plan_suggestion_decision_endpoint(
+        plan_id, suggestion_id, "dismissed", payload, user, session
     )

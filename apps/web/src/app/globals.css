@@ -16,9 +16,22 @@
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+/* Phase 1B.75 coordination refresh: crisp neutrals with controlled cobalt/coral accents. */
+:root {
+  --bg: #f7f7f9;
+  --surface-soft: #fafafd;
+  --text: #121a2a;
+  --muted: #667085;
+  --border: #e2e5ec;
+  --brand: #3956d8;
+  --brand-dark: #293fa9;
+  --brand-soft: #eef1ff;
+  --amber-soft: #fff0e9;
+}
+
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); }
-body { background-image: radial-gradient(circle at 88% 2%, rgb(224 234 225 / 55%), transparent 25rem); }
+body { background-image: radial-gradient(circle at 88% 2%, rgb(231 234 255 / 65%), transparent 25rem); }
 button, input, select, textarea { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 a { color: inherit; }
@@ -111,6 +124,11 @@ fieldset input { width: auto; min-height: auto; }
 
 .activity-card { padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: white; box-shadow: 0 5px 20px rgb(31 53 43 / 4%); }
 .activity-card > .split:first-child { padding-bottom: 12px; border-bottom: 1px solid #edf0ea; }
+.activity-author { margin: 8px 0 0; color: #6d57c7; font-size: .76rem; font-weight: 750; }
+.poll-option { padding: 14px; border: 1px solid var(--border); border-radius: 11px; background: white; }
+.poll-option p { margin: 4px 0 0; }
+.poll-votes { display: flex; gap: 7px; margin-top: 12px; }
+.plan-ideas .suggestion { border-left-color: #7357df; background: #f7f5ff; }
 .metadata { display: flex; flex-wrap: wrap; gap: 7px; margin: 11px 0; }
 .chip { padding: 5px 8px; border-radius: 8px; background: #f0f4f1; color: #52675f; font-size: .78rem; font-weight: 650; }
 .vote-control { display: inline-grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }

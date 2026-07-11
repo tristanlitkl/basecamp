@@ -139,7 +139,7 @@ describe("Phase 1B.5 planning UI", () => {
     fireEvent.click(within(activity).getByRole("button", { name: "Edit" }));
     fireEvent.change(within(activity).getByLabelText("Name"), { target: { value: "Sea kayaking" } });
     fireEvent.click(within(activity).getByRole("button", { name: "Save activity" }));
-    await waitFor(() => expect(patchActivity).toHaveBeenCalledWith("app-jwt", "plan-1", "activity-1", expect.objectContaining({ expected_version: 3, name: "Sea kayaking", estimated_cost_cents: 2500, estimated_duration_minutes: 90, travel_mode: "car" })));
+    await waitFor(() => expect(patchActivity).toHaveBeenCalledWith("app-jwt", "plan-1", "activity-1", expect.objectContaining({ expected_version: 3, name: "Sea kayaking", estimated_cost_cents: 2500, estimated_duration_minutes: 90 })));
     expect(resyncPlan).toHaveBeenCalledTimes(3);
   });
 
@@ -268,16 +268,16 @@ describe("Phase 1B.5 planning UI", () => {
     expect(screen.getByRole("button", { name: "Vote yes" }).getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("renders compact accessible vote controls, sends their contract values, and persists travel mode", async () => {
+  it("renders compact accessible vote controls and keeps travel mode out of activity mutations", async () => {
     await renderPlan();
     fireEvent.click(screen.getByRole("button", { name: "+ Add activity" }));
     const createForm = screen.getByRole("button", { name: "Save activity" }).closest("form")!;
     fireEvent.change(within(createForm).getByLabelText("Name"), { target: { value: "Gallery" } });
     fireEvent.change(within(createForm).getByLabelText("Hours"), { target: { value: "1" } });
     fireEvent.change(within(createForm).getByLabelText("Minutes"), { target: { value: "30" } });
-    fireEvent.click(within(createForm).getByRole("button", { name: "Travel by Train" }));
     fireEvent.click(within(createForm).getByRole("button", { name: "Save activity" }));
-    await waitFor(() => expect(createActivity).toHaveBeenCalledWith("app-jwt", "plan-1", expect.objectContaining({ name: "Gallery", estimated_duration_minutes: 90, travel_mode: "train" })));
+    await waitFor(() => expect(createActivity).toHaveBeenCalledWith("app-jwt", "plan-1", expect.objectContaining({ name: "Gallery", estimated_duration_minutes: 90 })));
+    expect(vi.mocked(createActivity).mock.calls[0][2]).not.toHaveProperty("travel_mode");
     expect(screen.getByRole("button", { name: "Vote yes" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Vote maybe" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Vote no" })).toBeTruthy();
@@ -285,16 +285,16 @@ describe("Phase 1B.5 planning UI", () => {
     await waitFor(() => expect(voteActivity).toHaveBeenCalledWith("app-jwt", "plan-1", "activity-1", "maybe"));
     const activity = screen.getByRole("heading", { name: "Kayaking" }).closest("article")!;
     fireEvent.click(within(activity).getByRole("button", { name: "Edit" }));
-    fireEvent.click(within(activity).getByRole("button", { name: "Travel by Plane" }));
     fireEvent.click(within(activity).getByRole("button", { name: "Save activity" }));
-    await waitFor(() => expect(patchActivity).toHaveBeenCalledWith("app-jwt", "plan-1", "activity-1", expect.objectContaining({ travel_mode: "plane" })));
+    await waitFor(() => expect(patchActivity).toHaveBeenCalled());
+    expect(vi.mocked(patchActivity).mock.calls.at(-1)?.[3]).not.toHaveProperty("travel_mode");
   });
 
   it("Phase 1B.75 comments suggestions and date coordination use operation IDs and resync", async () => {
     const next = snapshot();
     next.activity_comments = [{ id: "comment-1", activity_id: "activity-1", author_id: "user-2", author_display_name: "Member", body: "Great idea", version: 1, deleted_at: null, created_at: "2026-01-01", updated_at: "2026-01-01" }];
     next.activity_suggestions = [{ id: "suggestion-1", activity_id: "activity-1", author_id: "user-2", author_display_name: "Member", suggestion_type: "notes", proposed_changes_json: { notes: "New" }, message: "Change notes", status: "open", created_at: "2026-01-01" }];
-    next.date_suggestions = [{ id: "date-1", starts_on: "2026-07-18", ends_on: "2026-07-21", message: null, status: "open", author_id: "user-2", author_display_name: "Tris" }];
+    next.date_suggestions = [{ id: "date-1", starts_on: "2026-07-18", ends_on: "2026-07-21", message: null, status: "open", author_id: "user-2", author_display_name: "Tris", yes_votes: 0, maybe_votes: 0, no_votes: 0, vote: null }];
     await renderPlan(next);
     fireEvent.click(screen.getByText(/Discussion/));
     expect(screen.getByText("Great idea")).toBeTruthy();

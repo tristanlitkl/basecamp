@@ -143,6 +143,9 @@ export function decideActivitySuggestion(token: string, planId: string, activity
 export function upsertDateAvailability(token: string, planId: string, date: string, status: "available" | "maybe" | "unavailable") { return apiFetch(token, `/plans/${planId}/date-availability`, { method: "PUT", body: { date, status } }); }
 export function createDateSuggestion(token: string, planId: string, starts_on: string, ends_on: string, client_operation_id: string, message?: string) { return apiFetch(token, `/plans/${planId}/date-suggestions`, { method: "POST", body: { starts_on, ends_on, message, client_operation_id } }); }
 export function decideDateSuggestion(token: string, planId: string, suggestionId: string, decision: "accept" | "dismiss", expected_plan_version: number, client_operation_id: string) { return apiFetch(token, `/plans/${planId}/date-suggestions/${suggestionId}/${decision}`, { method: "POST", body: { expected_plan_version, client_operation_id } }); }
+export function voteDateSuggestion(token: string, planId: string, suggestionId: string, vote: "yes" | "maybe" | "no", client_operation_id: string) { return apiFetch(token, `/plans/${planId}/date-suggestions/${suggestionId}/vote`, { method: "PUT", body: { vote, client_operation_id } }); }
+export function createPlanSuggestion(token: string, planId: string, input: Record<string, unknown>) { return apiFetch(token, `/plans/${planId}/plan-suggestions`, { method: "POST", body: input }); }
+export function decidePlanSuggestion(token: string, planId: string, suggestionId: string, decision: "accept" | "dismiss", expected_plan_version: number, client_operation_id: string) { return apiFetch(token, `/plans/${planId}/plan-suggestions/${suggestionId}/${decision}`, { method: "POST", body: { expected_plan_version, client_operation_id } }); }
 
 export function createActivity(
   token: string,
@@ -233,6 +236,9 @@ export function patchPlan(
     starts_on?: string | null;
     ends_on?: string | null;
     max_drive_minutes?: number | null;
+    travel_mode?: "car" | "plane" | "train" | "bus" | null;
+    travel_duration_minutes?: number | null;
+    travel_notes?: string | null;
   }
 ): Promise<PlanSummary> {
   return apiFetch(token, `/plans/${planId}`, { method: "PATCH", body: input });

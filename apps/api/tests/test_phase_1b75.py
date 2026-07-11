@@ -205,3 +205,64 @@ def test_idempotency_concurrency_comment_suggestion_and_date_suggestion_create()
     assert [result[0] for result in accepted_date] == [200, 200]
     assert accepted_date[0][1] == accepted_date[1][1]
     assert snapshot["plan"]["planning_version"] == before_decision["plan"]["planning_version"] + 2
+
+
+def test_plan_travel_date_poll_and_plan_suggestion_adoption_preserve_content() -> None:
+    with client_context() as client:
+        owner_jwt, plan_id = create_plan(client, f"owner-{uuid4()}")
+        member_jwt, _ = join_member(client, owner_jwt, plan_id)
+        activity = client.post(
+            f"/plans/{plan_id}/activities", json={"name": "Keep me"}, headers=bearer(owner_jwt)
+        ).json()
+        before = client.get(f"/plans/{plan_id}/resync", headers=bearer(owner_jwt)).json()
+        patched = client.patch(
+            f"/plans/{plan_id}",
+            json={
+                "expected_version": before["plan"]["version"],
+                "title": "Renamed",
+                "travel_mode": "train",
+                "travel_duration_minutes": 125,
+            },
+            headers=bearer(owner_jwt),
+        )
+        option = client.post(
+            f"/plans/{plan_id}/date-suggestions",
+            json={
+                "starts_on": "2026-09-01",
+                "ends_on": "2026-09-04",
+                "client_operation_id": "date-option",
+            },
+            headers=bearer(member_jwt),
+        ).json()
+        vote = client.put(
+            f"/plans/{plan_id}/date-suggestions/{option['id']}/vote",
+            json={"vote": "yes", "client_operation_id": "date-vote"},
+            headers=bearer(member_jwt),
+        )
+        idea = client.post(
+            f"/plans/{plan_id}/plan-suggestions",
+            json={
+                "title": "Japan trip",
+                "budget_cents": 250000,
+                "client_operation_id": "plan-idea",
+            },
+            headers=bearer(member_jwt),
+        ).json()
+        current = client.get(f"/plans/{plan_id}/resync", headers=bearer(owner_jwt)).json()
+        adopted = client.post(
+            f"/plans/{plan_id}/plan-suggestions/{idea['id']}/accept",
+            json={
+                "expected_plan_version": current["plan"]["version"],
+                "client_operation_id": "adopt-plan",
+            },
+            headers=bearer(owner_jwt),
+        )
+        after = client.get(f"/plans/{plan_id}/resync", headers=bearer(owner_jwt)).json()
+    assert patched.status_code == 200 and vote.status_code == 200 and adopted.status_code == 200
+    assert patched.json()["planning_version"] == before["plan"]["planning_version"] + 1
+    assert after["plan"]["title"] == "Japan trip"
+    assert after["plan"]["version"] == current["plan"]["version"] + 1
+    assert after["plan"]["planning_version"] == current["plan"]["planning_version"] + 1
+    assert [row["id"] for row in after["activities"]] == [activity["id"]]
+    assert after["ledger_entries"] == before["ledger_entries"]
+    assert after["date_suggestions"][0]["yes_votes"] == 1

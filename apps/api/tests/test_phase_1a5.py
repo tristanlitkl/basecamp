@@ -115,6 +115,7 @@ def test_resync_returns_complete_authoritative_snapshot():
         "activity_suggestions",
         "date_availability",
         "date_suggestions",
+        "plan_suggestions",
         "server_version",
     }
     assert body["plan"]["id"] == plan_id
