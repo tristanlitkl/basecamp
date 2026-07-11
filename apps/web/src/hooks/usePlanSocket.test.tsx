@@ -5,7 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resyncPlan } from "@/lib/api-client";
 import { usePlanSocket } from "@/hooks/usePlanSocket";
 
-vi.mock("@/lib/api-client", () => ({ resyncPlan: vi.fn() }));
+vi.mock("@/lib/api-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api-client")>();
+  return { ...actual, resyncPlan: vi.fn() };
+});
 
 class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
@@ -148,6 +151,27 @@ describe("usePlanSocket lifecycle", () => {
     act(() => FakeWebSocket.instances.at(-1)!.fail(1008, "plan_membership_required"));
     expect(second.result.current.connectionState).toBe("authorization_failed");
     expect(authorization.onAuthorizationFailure).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("treats the nested membership resync error as terminal and ignores a stale close", async () => {
+    const { ApiError } = await import("@/lib/api-client");
+    vi.mocked(resyncPlan).mockRejectedValue(
+      new ApiError(403, { detail: { error: "plan_membership_required" } })
+    );
+    const callbacks = options();
+    const { result } = renderHook(() => usePlanSocket(callbacks));
+    const socket = FakeWebSocket.instances[0];
+
+    await act(async () => socket.connected());
+    expect(result.current.connectionState).toBe("authorization_failed");
+    expect(callbacks.onAuthorizationFailure).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+
+    act(() => socket.fail());
+    await act(async () => vi.advanceTimersByTime(120_000));
+    expect(result.current.connectionState).toBe("authorization_failed");
+    expect(FakeWebSocket.instances).toHaveLength(1);
     expect(vi.getTimerCount()).toBe(0);
   });
 

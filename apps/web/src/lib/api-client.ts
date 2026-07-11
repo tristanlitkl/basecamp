@@ -6,6 +6,26 @@ type RequestOptions = {
   body?: unknown;
 };
 
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly body: unknown
+  ) {
+    super(`${status} ${JSON.stringify(body)}`);
+    this.name = "ApiError";
+  }
+}
+
+export function isAuthenticationError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
+}
+
+export function isPlanMembershipError(error: unknown): boolean {
+  if (!(error instanceof ApiError) || error.status !== 403) return false;
+  const body = error.body as { detail?: { error?: unknown } } | null;
+  return body?.detail?.error === "plan_membership_required";
+}
+
 async function apiFetch<T>(token: string, path: string, options: RequestOptions = {}): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: options.method ?? "GET",
@@ -18,7 +38,7 @@ async function apiFetch<T>(token: string, path: string, options: RequestOptions 
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({ error: "request_failed" }));
-    throw new Error(`${response.status} ${JSON.stringify(errorBody)}`);
+    throw new ApiError(response.status, errorBody);
   }
 
   if (response.status === 204) {

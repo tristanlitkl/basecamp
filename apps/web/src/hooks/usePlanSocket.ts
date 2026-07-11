@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { resyncPlan } from "@/lib/api-client";
+import { isAuthenticationError, isPlanMembershipError, resyncPlan } from "@/lib/api-client";
 import {
   calculateReconnectDelay,
   COLD_START_NOTICE_MS,
@@ -39,6 +39,7 @@ export function usePlanSocket({
   const attemptRef = useRef(0);
   const disposedRef = useRef(false);
   const generationRef = useRef(0);
+  const terminalRef = useRef(false);
   const callbacksRef = useRef({ onSnapshot, onAuthFailure, onAuthorizationFailure });
   callbacksRef.current = { onSnapshot, onAuthFailure, onAuthorizationFailure };
 
@@ -53,7 +54,7 @@ export function usePlanSocket({
 
   const connectRef = useRef<(manual?: boolean) => void>(() => undefined);
   connectRef.current = (manual = false) => {
-    if (disposedRef.current) return;
+    if (disposedRef.current || terminalRef.current) return;
     clearTimers();
 
     if (!token) {
@@ -109,8 +110,9 @@ export function usePlanSocket({
         setConnectionState("restored");
       } catch (error) {
         if (!isCurrent()) return;
-        const message = error instanceof Error ? error.message : "";
-        if (message.startsWith("401 ")) {
+        if (isAuthenticationError(error)) {
+          terminalRef.current = true;
+          clearTimers();
           ++generationRef.current;
           socketRef.current = null;
           socket.onclose = null;
@@ -119,7 +121,9 @@ export function usePlanSocket({
           callbacksRef.current.onAuthFailure();
           return;
         }
-        if (message.startsWith("403 ")) {
+        if (isPlanMembershipError(error)) {
+          terminalRef.current = true;
+          clearTimers();
           ++generationRef.current;
           socketRef.current = null;
           socket.onclose = null;
@@ -138,12 +142,14 @@ export function usePlanSocket({
       clearTimers();
 
       if (isAuthenticationFailureClose(event)) {
+        terminalRef.current = true;
         ++generationRef.current;
         setConnectionState("auth_failed");
         callbacksRef.current.onAuthFailure();
         return;
       }
       if (isAuthorizationFailureClose(event)) {
+        terminalRef.current = true;
         ++generationRef.current;
         setConnectionState("authorization_failed");
         callbacksRef.current.onAuthorizationFailure?.();
@@ -172,6 +178,7 @@ export function usePlanSocket({
 
   useEffect(() => {
     disposedRef.current = false;
+    terminalRef.current = false;
     connectRef.current(false);
     return () => {
       disposedRef.current = true;

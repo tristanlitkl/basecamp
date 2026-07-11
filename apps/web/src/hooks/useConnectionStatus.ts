@@ -17,6 +17,6 @@ export function connectionLabel(state: ConnectionState): string {
     case "auth_failed":
       return "Authentication required — sign in again";
     case "authorization_failed":
-      return "You are not authorized to access this plan";
+      return "You do not have access to this plan.";
   }
 }

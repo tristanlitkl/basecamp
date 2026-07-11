@@ -9,6 +9,8 @@ import {
   createActivity,
   createInvite,
   deleteActivity,
+  isAuthenticationError,
+  isPlanMembershipError,
   resyncPlan,
   syncUser,
   voteActivity
@@ -28,15 +30,26 @@ export default function PlanPage() {
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [authFailed, setAuthFailed] = useState(false);
+  const [authorizationFailed, setAuthorizationFailed] = useState(false);
 
   const socket = usePlanSocket({
     planId,
     token: session?.appJwt,
     onSnapshot: (snapshot) => {
+      if (authorizationFailed) return;
       setPlan(snapshotToPlanDetail(snapshot));
       setError(null);
     },
-    onAuthFailure: () => setAuthFailed(true)
+    onAuthFailure: () => {
+      setPlan(null);
+      setAuthFailed(true);
+    },
+    onAuthorizationFailure: () => {
+      setPlan(null);
+      setError(null);
+      setAuthFailed(false);
+      setAuthorizationFailed(true);
+    }
   });
 
   async function load() {
@@ -49,7 +62,18 @@ export default function PlanPage() {
   }
 
   useEffect(() => {
-    load().catch((err) => setError(err instanceof Error ? err.message : "Failed to load plan"));
+    load().catch((err) => {
+      setPlan(null);
+      if (isPlanMembershipError(err)) {
+        setError(null);
+        setAuthFailed(false);
+        setAuthorizationFailed(true);
+      } else if (isAuthenticationError(err)) {
+        setAuthFailed(true);
+      } else {
+        setError(err instanceof Error ? err.message : "Failed to load plan");
+      }
+    });
   }, [session?.appJwt, planId]);
 
   async function submitActivity(event: FormEvent<HTMLFormElement>) {
@@ -90,7 +114,7 @@ export default function PlanPage() {
       <Link href="/dashboard">Dashboard</Link>
       <h1>{plan?.title ?? "Plan"}</h1>
       {plan && <p>Role: {plan.role}</p>}
-      <section
+      {!authorizationFailed && <section
         style={{
           border: "1px solid #ccc",
           padding: 12,
@@ -110,9 +134,11 @@ export default function PlanPage() {
             Sign in again
           </button>
         )}
-      </section>
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      </section>}
+      {authorizationFailed && <p>You do not have access to this plan.</p>}
+      {error && !authorizationFailed && <p style={{ color: "crimson" }}>{error}</p>}
 
+      {plan && !authorizationFailed && <>
       <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
         <button
           type="button"
@@ -183,6 +209,7 @@ export default function PlanPage() {
           </article>
         ))}
       </section>
+      </>}
     </main>
   );
 }
