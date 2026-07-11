@@ -159,7 +159,7 @@ export function usePlanSocket({
       }
     };
 
-    socket.onclose = (event) => {
+    socket.onclose = async (event) => {
       if (!isCurrent()) return;
       socketRef.current = null;
       clearTimers();
@@ -172,6 +172,23 @@ export function usePlanSocket({
         enterAuthorizationDeniedRef.current();
         return;
       }
+      // A rejected browser WebSocket upgrade often reports only code 1006, even
+      // when the backend knows the app JWT is expired. Classify that close once
+      // through the authoritative REST endpoint before applying network backoff.
+      try {
+        await resyncPlan(token, planId);
+      } catch (error) {
+        if (!isCurrent()) return;
+        if (isAuthenticationError(error)) {
+          enterAuthenticationFailedRef.current();
+          return;
+        }
+        if (isPlanMembershipError(error)) {
+          enterAuthorizationDeniedRef.current();
+          return;
+        }
+      }
+      if (!isCurrent()) return;
       if (attemptRef.current >= MAX_AUTO_RECONNECT_ATTEMPTS) {
         setConnectionState("unavailable");
         setNextRetryMs(null);

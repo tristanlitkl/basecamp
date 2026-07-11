@@ -50,6 +50,7 @@ const options = () => ({
 
 async function closeAndAdvance(delay: number) {
   act(() => FakeWebSocket.instances.at(-1)!.fail());
+  await act(async () => Promise.resolve());
   expect(vi.getTimerCount()).toBe(1);
   await act(async () => vi.advanceTimersByTime(delay));
 }
@@ -81,9 +82,10 @@ describe("usePlanSocket lifecycle", () => {
     renderHook(() => usePlanSocket(options()));
     for (const [index, delay] of [2000, 4000, 8000, 16000, 30000].entries()) {
       const socket = FakeWebSocket.instances.at(-1)!;
-      act(() => {
+      await act(async () => {
         socket.error();
         socket.fail();
+        await Promise.resolve();
       });
       expect(vi.getTimerCount()).toBe(1);
       await act(async () => vi.advanceTimersByTime(delay - 1));
@@ -93,9 +95,10 @@ describe("usePlanSocket lifecycle", () => {
     }
   });
 
-  it("clears a pending reconnect on unmount", () => {
+  it("clears a pending reconnect on unmount", async () => {
     const { unmount } = renderHook(() => usePlanSocket(options()));
     act(() => FakeWebSocket.instances[0].fail());
+    await act(async () => Promise.resolve());
     unmount();
     act(() => vi.advanceTimersByTime(60_000));
     expect(FakeWebSocket.instances).toHaveLength(1);
@@ -104,7 +107,10 @@ describe("usePlanSocket lifecycle", () => {
   it("exhausts automatic retries and manual retry starts exactly once", async () => {
     const { result } = renderHook(() => usePlanSocket(options()));
     for (const delay of [2000, 4000, 8000, 16000, 30000]) await closeAndAdvance(delay);
-    act(() => FakeWebSocket.instances.at(-1)!.fail());
+    await act(async () => {
+      FakeWebSocket.instances.at(-1)!.fail();
+      await Promise.resolve();
+    });
     expect(result.current.connectionState).toBe("unavailable");
     expect(vi.getTimerCount()).toBe(0);
     act(() => result.current.retry());
@@ -123,7 +129,10 @@ describe("usePlanSocket lifecycle", () => {
     expect(callbacks.onSnapshot).toHaveBeenCalledOnce();
     expect(result.current.connectionState).toBe("restored");
 
-    act(() => FakeWebSocket.instances[0].fail());
+    await act(async () => {
+      FakeWebSocket.instances[0].fail();
+      await Promise.resolve();
+    });
     expect(result.current.nextRetryMs).toBe(2000);
   });
 
@@ -135,6 +144,31 @@ describe("usePlanSocket lifecycle", () => {
     expect(vi.getTimerCount()).toBe(1);
     await act(async () => vi.advanceTimersByTime(1999));
     expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  it("classifies an unlabelled reconnect close through resync and stops for an expired token", async () => {
+    const { ApiError } = await import("@/lib/api-client");
+    vi.mocked(resyncPlan).mockRejectedValue(new ApiError(401, { detail: { error: "token_expired" } }));
+    const callbacks = options();
+    const { result } = renderHook(() => usePlanSocket(callbacks));
+    const socket = FakeWebSocket.instances[0];
+    const staleClose = socket.onclose;
+
+    await act(async () => {
+      socket.fail(1006, "");
+      await Promise.resolve();
+    });
+    expect(result.current.connectionState).toBe("auth_failed");
+    expect(callbacks.onAuthFailure).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(resyncPlan).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      await staleClose?.({ code: 1006, reason: "" } as CloseEvent);
+    });
+    await act(async () => vi.advanceTimersByTime(120_000));
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(resyncPlan).toHaveBeenCalledOnce();
   });
 
   it("stops for authentication and authorization failures", () => {
@@ -188,7 +222,9 @@ describe("usePlanSocket lifecycle", () => {
     expect(callbacks.onAuthFailure).toHaveBeenCalledOnce();
     expect(vi.getTimerCount()).toBe(0);
 
-    act(() => staleClose?.({ code: 1006, reason: "" } as CloseEvent));
+    await act(async () => {
+      await staleClose?.({ code: 1006, reason: "" } as CloseEvent);
+    });
     act(() => result.current.retry());
     await act(async () => vi.advanceTimersByTime(120_000));
     expect(FakeWebSocket.instances).toHaveLength(1);
@@ -199,7 +235,10 @@ describe("usePlanSocket lifecycle", () => {
     const callbacks = options();
     const { result, rerender } = renderHook(() => usePlanSocket(callbacks));
     const staleClose = FakeWebSocket.instances[0].onclose;
-    act(() => FakeWebSocket.instances[0].fail());
+    await act(async () => {
+      FakeWebSocket.instances[0].fail();
+      await Promise.resolve();
+    });
     expect(vi.getTimerCount()).toBe(1);
 
     act(() => result.current.denyAuthorization());
@@ -207,7 +246,9 @@ describe("usePlanSocket lifecycle", () => {
     expect(vi.getTimerCount()).toBe(0);
     expect(callbacks.onAuthorizationFailure).toHaveBeenCalledOnce();
 
-    act(() => staleClose?.({ code: 1006, reason: "" } as CloseEvent));
+    await act(async () => {
+      await staleClose?.({ code: 1006, reason: "" } as CloseEvent);
+    });
     act(() => result.current.retry());
     rerender();
     await act(async () => vi.advanceTimersByTime(120_000));
@@ -229,10 +270,13 @@ describe("usePlanSocket lifecycle", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("leaves only one live socket and no duplicate timer under StrictMode", () => {
+  it("leaves only one live socket and no duplicate timer under StrictMode", async () => {
     renderHook(() => usePlanSocket(options()), { wrapper: StrictMode });
     expect(FakeWebSocket.instances.filter((socket) => !socket.closed)).toHaveLength(1);
-    act(() => FakeWebSocket.instances.at(-1)!.fail());
+    await act(async () => {
+      FakeWebSocket.instances.at(-1)!.fail();
+      await Promise.resolve();
+    });
     expect(vi.getTimerCount()).toBe(1);
   });
 });
