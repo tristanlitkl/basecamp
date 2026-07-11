@@ -53,6 +53,25 @@ export function usePlanSocket({
   }, []);
 
   const connectRef = useRef<(manual?: boolean) => void>(() => undefined);
+  const enterAuthenticationFailedRef = useRef<() => void>(() => undefined);
+  enterAuthenticationFailedRef.current = () => {
+    if (terminalRef.current) return;
+    terminalRef.current = true;
+    ++generationRef.current;
+    clearTimers();
+    const socket = socketRef.current;
+    socketRef.current = null;
+    if (socket) {
+      socket.onmessage = null;
+      socket.onclose = null;
+      socket.onerror = null;
+      socket.close();
+    }
+    setNextRetryMs(null);
+    setConnectionState("auth_failed");
+    callbacksRef.current.onAuthFailure();
+  };
+
   const enterAuthorizationDeniedRef = useRef<() => void>(() => undefined);
   enterAuthorizationDeniedRef.current = () => {
     if (terminalRef.current) return;
@@ -77,8 +96,7 @@ export function usePlanSocket({
     clearTimers();
 
     if (!token) {
-      setConnectionState("auth_failed");
-      callbacksRef.current.onAuthFailure();
+      enterAuthenticationFailedRef.current();
       return;
     }
 
@@ -130,14 +148,7 @@ export function usePlanSocket({
       } catch (error) {
         if (!isCurrent()) return;
         if (isAuthenticationError(error)) {
-          terminalRef.current = true;
-          clearTimers();
-          ++generationRef.current;
-          socketRef.current = null;
-          socket.onclose = null;
-          socket.close();
-          setConnectionState("auth_failed");
-          callbacksRef.current.onAuthFailure();
+          enterAuthenticationFailedRef.current();
           return;
         }
         if (isPlanMembershipError(error)) {
@@ -154,10 +165,7 @@ export function usePlanSocket({
       clearTimers();
 
       if (isAuthenticationFailureClose(event)) {
-        terminalRef.current = true;
-        ++generationRef.current;
-        setConnectionState("auth_failed");
-        callbacksRef.current.onAuthFailure();
+        enterAuthenticationFailedRef.current();
         return;
       }
       if (isAuthorizationFailureClose(event)) {
@@ -204,6 +212,7 @@ export function usePlanSocket({
   }, [clearTimers, planId, token]);
 
   const retry = useCallback(() => connectRef.current(true), []);
+  const denyAuthentication = useCallback(() => enterAuthenticationFailedRef.current(), []);
   const denyAuthorization = useCallback(() => enterAuthorizationDeniedRef.current(), []);
-  return { connectionState, nextRetryMs, retry, denyAuthorization };
+  return { connectionState, nextRetryMs, retry, denyAuthentication, denyAuthorization };
 }

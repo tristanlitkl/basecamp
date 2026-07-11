@@ -67,7 +67,7 @@ export default function PlanPage() {
       if (isPlanMembershipError(err)) {
         socket.denyAuthorization();
       } else if (isAuthenticationError(err)) {
-        setAuthFailed(true);
+        socket.denyAuthentication();
       } else {
         setError(err instanceof Error ? err.message : "Failed to load plan");
       }

@@ -175,6 +175,26 @@ describe("usePlanSocket lifecycle", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("treats a resync 401 as terminal and ignores its stale close", async () => {
+    const { ApiError } = await import("@/lib/api-client");
+    vi.mocked(resyncPlan).mockRejectedValue(new ApiError(401, { detail: { error: "token_expired" } }));
+    const callbacks = options();
+    const { result } = renderHook(() => usePlanSocket(callbacks));
+    const socket = FakeWebSocket.instances[0];
+    const staleClose = socket.onclose;
+
+    await act(async () => socket.connected());
+    expect(result.current.connectionState).toBe("auth_failed");
+    expect(callbacks.onAuthFailure).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+
+    act(() => staleClose?.({ code: 1006, reason: "" } as CloseEvent));
+    act(() => result.current.retry());
+    await act(async () => vi.advanceTimersByTime(120_000));
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("cancels a scheduled reconnect when an independent request denies membership", async () => {
     const callbacks = options();
     const { result, rerender } = renderHook(() => usePlanSocket(callbacks));
