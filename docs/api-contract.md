@@ -29,3 +29,11 @@ Bootstrap rule: do not add generic CRUD resources or placeholder endpoints outsi
 - Requires server-side plan membership.
 - Sends one message on success: `{"type":"connected"}`.
 - The connected message is not authoritative state. Clients must call `/resync`.
+
+## Phase 1B Balances
+
+`GET /plans/{plan_id}/balances`
+
+- Requires `Authorization: Bearer <app_jwt>` and server-side plan membership.
+- Returns every plan member as `{user_id, balance_cents}`.
+- Values are authoritative read-time sums from immutable ledger entries; no mutable balance is stored.

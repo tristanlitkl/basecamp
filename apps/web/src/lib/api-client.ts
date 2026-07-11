@@ -1,7 +1,19 @@
 import { getSession } from "next-auth/react";
 
 import { apiBaseUrl } from "@/lib/env";
-import type { CreateActivityInput, PlanDetail, PlanSummary, ResyncSnapshot, User } from "@/types/api";
+import type {
+  ActivitySummary,
+  CreateActivityInput,
+  Expense,
+  ExpenseMutationResponse,
+  ItineraryItem,
+  ItineraryMutationResponse,
+  PlanDetail,
+  PlanBalance,
+  PlanSummary,
+  ResyncSnapshot,
+  User
+} from "@/types/api";
 
 type RequestOptions = {
   method?: string;
@@ -94,6 +106,10 @@ export function resyncPlan(token: string, planId: string): Promise<ResyncSnapsho
   return apiFetch<ResyncSnapshot>(token, `/plans/${planId}/resync`);
 }
 
+export function getPlanBalances(token: string, planId: string): Promise<PlanBalance[]> {
+  return apiFetch<PlanBalance[]>(token, `/plans/${planId}/balances`);
+}
+
 export function createInvite(token: string, planId: string): Promise<{ token: string; plan_id: string }> {
   return apiFetch<{ token: string; plan_id: string }>(token, `/plans/${planId}/invites`, {
     method: "POST"
@@ -110,15 +126,61 @@ export function createActivity(
   token: string,
   planId: string,
   input: CreateActivityInput
-): Promise<{ id: string; plan_id: string; name: string }> {
-  return apiFetch<{ id: string; plan_id: string; name: string }>(token, `/plans/${planId}/activities`, {
+): Promise<{ id: string; plan_id: string; name: string; version: number }> {
+  return apiFetch<{ id: string; plan_id: string; name: string; version: number }>(token, `/plans/${planId}/activities`, {
     method: "POST",
     body: input
   });
 }
 
-export function deleteActivity(token: string, planId: string, activityId: string): Promise<void> {
-  return apiFetch<void>(token, `/plans/${planId}/activities/${activityId}`, { method: "DELETE" });
+export function patchActivity(
+  token: string,
+  planId: string,
+  activityId: string,
+  input: {
+    expected_version: number;
+    name?: string;
+    description?: string | null;
+    address?: string | null;
+    estimated_cost_cents?: number | null;
+    estimated_duration_minutes?: number | null;
+    tags?: string[] | null;
+    notes?: string | null;
+  }
+): Promise<{ id: string; plan_id: string; name: string; version: number }> {
+  return apiFetch(token, `/plans/${planId}/activities/${activityId}`, { method: "PATCH", body: input });
+}
+
+export function deleteActivity(
+  token: string,
+  planId: string,
+  activityId: string,
+  expectedVersion: number
+): Promise<void> {
+  return apiFetch<void>(
+    token,
+    `/plans/${planId}/activities/${activityId}?expected_version=${encodeURIComponent(expectedVersion)}`,
+    { method: "DELETE" }
+  );
+}
+
+export type DeleteActivityResult = {
+  snapshot: ResyncSnapshot;
+  conflict: boolean;
+};
+
+export async function deleteActivityAndResync(
+  token: string,
+  planId: string,
+  activity: Pick<ActivitySummary, "id" | "version">
+): Promise<DeleteActivityResult> {
+  try {
+    await deleteActivity(token, planId, activity.id, activity.version);
+    return { snapshot: await resyncPlan(token, planId), conflict: false };
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 409) throw error;
+    return { snapshot: await resyncPlan(token, planId), conflict: true };
+  }
 }
 
 export function voteActivity(
@@ -135,4 +197,94 @@ export function voteActivity(
       body: { vote }
     }
   );
+}
+
+export function patchPlan(
+  token: string,
+  planId: string,
+  input: {
+    expected_version: number;
+    title?: string;
+    description?: string | null;
+    budget_cents?: number | null;
+    starts_on?: string | null;
+    ends_on?: string | null;
+    max_drive_minutes?: number | null;
+  }
+): Promise<PlanSummary> {
+  return apiFetch(token, `/plans/${planId}`, { method: "PATCH", body: input });
+}
+
+export function setPlanLifecycle(
+  token: string,
+  planId: string,
+  action: "finalize" | "unfinalize",
+  expectedVersion: number
+): Promise<PlanSummary> {
+  return apiFetch(token, `/plans/${planId}/${action}`, {
+    method: "POST",
+    body: { expected_version: expectedVersion }
+  });
+}
+
+export function createItineraryItem(
+  token: string,
+  planId: string,
+  input: { title: string; client_operation_id: string }
+): Promise<ItineraryMutationResponse> {
+  return apiFetch(token, `/plans/${planId}/itinerary-items`, { method: "POST", body: input });
+}
+
+export function patchItineraryItem(
+  token: string,
+  planId: string,
+  itemId: string,
+  input: { title?: string; expected_version: number }
+): Promise<ItineraryMutationResponse> {
+  return apiFetch(token, `/plans/${planId}/itinerary-items/${itemId}`, { method: "PATCH", body: input });
+}
+
+export function reorderItineraryItem(
+  token: string,
+  planId: string,
+  itemId: string,
+  input: { expected_version: number; previous_item_id?: string; next_item_id?: string }
+): Promise<ItineraryMutationResponse> {
+  return apiFetch(token, `/plans/${planId}/itinerary-items/${itemId}/reorder`, { method: "POST", body: input });
+}
+
+export function deleteItineraryItem(
+  token: string,
+  planId: string,
+  itemId: string,
+  expectedVersion: number
+): Promise<void> {
+  return apiFetch(token, `/plans/${planId}/itinerary-items/${itemId}?expected_version=${expectedVersion}`, { method: "DELETE" });
+}
+
+export function createExpense(
+  token: string,
+  planId: string,
+  input: { description: string; amount_cents: number; paid_by_user_id?: string; participant_user_ids?: string[]; client_operation_id: string }
+): Promise<ExpenseMutationResponse> {
+  return apiFetch(token, `/plans/${planId}/expenses`, { method: "POST", body: input });
+}
+
+export function patchExpense(
+  token: string,
+  planId: string,
+  expenseId: string,
+  input: { description: string; amount_cents: number; paid_by_user_id?: string; participant_user_ids?: string[]; expected_version: number; client_operation_id: string }
+): Promise<ExpenseMutationResponse> {
+  return apiFetch(token, `/plans/${planId}/expenses/${expenseId}`, { method: "PATCH", body: input });
+}
+
+export function deleteExpense(
+  token: string,
+  planId: string,
+  expenseId: string,
+  expectedVersion: number,
+  operationId: string
+): Promise<void> {
+  return apiFetch(token, `/plans/${planId}/expenses/${expenseId}?expected_version=${expectedVersion}&client_operation_id=${encodeURIComponent(operationId)}`, { method: "DELETE" });
 }

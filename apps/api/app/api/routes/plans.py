@@ -41,6 +41,9 @@ class PlanSummary(BaseModel):
     version: int
     planning_version: int
     status: str
+    starts_on: datetime | None
+    ends_on: datetime | None
+    max_drive_minutes: int | None
 
 
 class PlanPatch(BaseModel):
@@ -59,6 +62,7 @@ class LifecycleRequest(BaseModel):
 
 class ActivitySummary(BaseModel):
     id: UUID
+    version: int
     name: str
     description: str | None
     address: str | None
@@ -103,6 +107,9 @@ def serialize_plan(plan: Plan, role: str) -> PlanSummary:
         version=plan.version,
         planning_version=plan.planning_version,
         status=plan.status,
+        starts_on=plan.starts_on,
+        ends_on=plan.ends_on,
+        max_drive_minutes=plan.max_drive_minutes,
     )
 
 
@@ -348,6 +355,7 @@ async def get_plan(
         summaries.append(
             ActivitySummary(
                 id=activity.id,
+                version=activity.version,
                 name=activity.name,
                 description=activity.description,
                 address=activity.address,

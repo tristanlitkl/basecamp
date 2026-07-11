@@ -1,21 +1,22 @@
-export type User = {
-  id: string;
-  email: string;
-  display_name: string;
-};
+export type User = { id: string; email: string; display_name: string };
 
 export type PlanSummary = {
   id: string;
   title: string;
   description: string | null;
   budget_cents: number | null;
-  role: string;
+  role: "owner" | "member";
   version: number;
   planning_version: number;
+  status: "draft" | "finalized";
+  starts_on?: string | null;
+  ends_on?: string | null;
+  max_drive_minutes?: number | null;
 };
 
 export type ActivitySummary = {
   id: string;
+  version: number;
   name: string;
   description: string | null;
   address: string | null;
@@ -32,20 +33,73 @@ export type ActivitySummary = {
   maybe_votes: number;
 };
 
-export type PlanDetail = PlanSummary & {
-  activities: ActivitySummary[];
+export type ItineraryItem = {
+  id: string;
+  plan_id: string;
+  activity_id: string | null;
+  title: string;
+  position_key: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  version: number;
 };
 
+export type Expense = {
+  id: string;
+  plan_id: string;
+  paid_by_user_id: string;
+  description: string;
+  amount_cents: number;
+  status: "active" | "reversed";
+  version: number;
+};
+
+export type ExpenseMutationResponse = Expense & {
+  splits: Array<{ user_id: string; amount_cents: number }>;
+};
+
+export type ItineraryMutationResponse = Pick<
+  ItineraryItem,
+  "id" | "plan_id" | "title" | "position_key" | "version"
+>;
+
+export type ExpenseSplit = {
+  id: string;
+  expense_id: string;
+  user_id: string;
+  amount_cents: number;
+  status: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type LedgerEntry = {
+  id: string;
+  plan_id: string;
+  expense_id: string | null;
+  from_user_id: string | null;
+  to_user_id: string | null;
+  amount_cents: number;
+  memo: string | null;
+  reversed_by_entry_id: string | null;
+  created_at?: string;
+};
+
+export type PlanBalance = {
+  user_id: string;
+  balance_cents: number;
+};
+
+export type PlanDetail = PlanSummary & { activities: ActivitySummary[] };
 export type PlanMember = {
   id: string;
   plan_id: string;
   user_id: string;
-  role: string;
+  role: "owner" | "member";
   email: string;
   display_name: string;
   created_at: string;
 };
-
 export type PlanEvent = {
   id: string;
   plan_id: string;
@@ -58,17 +112,16 @@ export type PlanEvent = {
   client_operation_id: string | null;
   created_at: string;
 };
-
 export type ResyncSnapshot = {
   plan: PlanSummary;
   members: PlanMember[];
   activities: ActivitySummary[];
   activity_scores: Record<string, { yes: number; maybe: number; no: number }>;
-  itinerary_items: Record<string, unknown>[];
+  itinerary_items: ItineraryItem[];
   votes: Record<string, unknown>[];
-  expenses: Record<string, unknown>[];
-  expense_splits: Record<string, unknown>[];
-  ledger_entries: Record<string, unknown>[];
+  expenses: Expense[];
+  expense_splits: ExpenseSplit[];
+  ledger_entries: LedgerEntry[];
   latest_plan_events: PlanEvent[];
   server_version: number;
 };
@@ -81,4 +134,5 @@ export type CreateActivityInput = {
   estimated_duration_minutes?: number;
   tags?: string[];
   notes?: string;
+  client_operation_id?: string;
 };

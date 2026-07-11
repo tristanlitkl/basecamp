@@ -38,12 +38,14 @@ describe("snapshotToPlanDetail", () => {
         budget_cents: null,
         role: "owner",
         version: 7,
-        planning_version: 1
+        planning_version: 1,
+        status: "draft"
       },
       members: [],
       activities: [
         {
           id: "activity-1",
+          version: 1,
           name: "Server activity",
           description: null,
           address: null,

@@ -1,7 +1,20 @@
 import { getSession } from "next-auth/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getMe } from "@/lib/api-client";
+import {
+  createExpense,
+  createItineraryItem,
+  deleteActivityAndResync,
+  deleteExpense,
+  deleteItineraryItem,
+  getMe,
+  patchActivity,
+  patchExpense,
+  patchItineraryItem,
+  patchPlan,
+  reorderItineraryItem,
+  setPlanLifecycle
+} from "@/lib/api-client";
 
 vi.mock("next-auth/react", () => ({ getSession: vi.fn() }));
 
@@ -31,5 +44,88 @@ describe("API app JWT refresh", () => {
 
     await expect(getMe("expired-token")).rejects.toMatchObject({ status: 401 });
     expect(getSession).toHaveBeenCalledOnce();
+  });
+
+  it("sends the current activity version and replaces state from authoritative resync after delete", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ activities: [], plan: { id: "plan-1" } }), { status: 200 })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await deleteActivityAndResync("token", "plan-1", {
+      id: "activity-1",
+      version: 7
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toContain("/activities/activity-1?expected_version=7");
+    expect(result).toMatchObject({ conflict: false, snapshot: { activities: [] } });
+  });
+
+  it("resyncs once and reports a stale activity conflict without retrying delete", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ detail: { error: "version_conflict" } }), { status: 409 })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ activities: [{ id: "activity-1", version: 2 }] }), {
+          status: 200
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await deleteActivityAndResync("token", "plan-1", {
+      id: "activity-1",
+      version: 1
+    });
+
+    expect(result).toMatchObject({ conflict: true, snapshot: { activities: [{ version: 2 }] } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends plan lifecycle, constraint, and activity expected versions in backend contract bodies", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({}), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await patchPlan("token", "plan-1", { expected_version: 4, budget_cents: 1005 });
+    await setPlanLifecycle("token", "plan-1", "finalize", 5);
+    await patchActivity("token", "plan-1", "activity-1", { expected_version: 3, name: "Edited" });
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ expected_version: 4, budget_cents: 1005 });
+    expect(fetchMock.mock.calls[1][0]).toContain("/plans/plan-1/finalize");
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({ expected_version: 5 });
+    expect(JSON.parse(String(fetchMock.mock.calls[2][1]?.body))).toEqual({ expected_version: 3, name: "Edited" });
+  });
+
+  it("sends itinerary create, edit, reorder, and delete contracts exactly", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await createItineraryItem("token", "plan-1", { title: "First", client_operation_id: "op-create" });
+    await patchItineraryItem("token", "plan-1", "item-1", { title: "Edited", expected_version: 2 });
+    await reorderItineraryItem("token", "plan-1", "item-1", { expected_version: 3, previous_item_id: "previous", next_item_id: "next" });
+    await deleteItineraryItem("token", "plan-1", "item-1", 4);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({ client_operation_id: "op-create" });
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toMatchObject({ expected_version: 2 });
+    expect(JSON.parse(String(fetchMock.mock.calls[2][1]?.body))).toEqual({ expected_version: 3, previous_item_id: "previous", next_item_id: "next" });
+    expect(fetchMock.mock.calls[3][0]).toContain("expected_version=4");
+  });
+
+  it("sends integer-cent expense participants, expected versions, and operation IDs", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await createExpense("token", "plan-1", { description: "Meal", amount_cents: 1005, paid_by_user_id: "u1", participant_user_ids: ["u1", "u2"], client_operation_id: "create-op" });
+    await patchExpense("token", "plan-1", "expense-1", { description: "Dinner", amount_cents: 1234, paid_by_user_id: "u1", participant_user_ids: ["u1", "u2"], expected_version: 6, client_operation_id: "edit-op" });
+    await deleteExpense("token", "plan-1", "expense-1", 7, "delete-op");
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({ amount_cents: 1005, participant_user_ids: ["u1", "u2"], client_operation_id: "create-op" });
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toMatchObject({ amount_cents: 1234, expected_version: 6, client_operation_id: "edit-op" });
+    expect(fetchMock.mock.calls[2][0]).toContain("expected_version=7&client_operation_id=delete-op");
   });
 });

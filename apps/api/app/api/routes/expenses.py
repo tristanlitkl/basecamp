@@ -15,7 +15,7 @@ from app.models.plan import PlanMember
 from app.models.user import User
 from app.services.event_service import append_plan_event
 from app.services.idempotency_service import claim_operation, complete_operation, fail_operation
-from app.services.ledger_service import reverse_expense_ledger, write_expense_ledger
+from app.services.ledger_service import plan_balances, reverse_expense_ledger, write_expense_ledger
 from app.services.planning_service import require_mutable_plan
 
 router = APIRouter(tags=["expenses"])
@@ -42,6 +42,11 @@ class ExpenseResponse(BaseModel):
     status: str
     version: int
     splits: list[dict[str, Any]]
+
+
+class BalanceResponse(BaseModel):
+    user_id: UUID
+    balance_cents: int
 
 
 def equal_splits(amount_cents: int, user_ids: list[UUID]) -> list[tuple[UUID, int]]:
@@ -86,6 +91,31 @@ def expense_response(expense: Expense, splits: list[tuple[UUID, int]]) -> dict[s
         "version": expense.version,
         "splits": [{"user_id": user_id, "amount_cents": amount} for user_id, amount in splits],
     }
+
+
+@router.get("/plans/{plan_id}/balances", response_model=list[BalanceResponse])
+async def get_plan_balances(
+    plan_id: UUID,
+    membership: PlanMember = Depends(require_plan_member),
+    session: AsyncSession = Depends(get_session),
+) -> list[BalanceResponse]:
+    """Return authoritative ledger sums, including zero-balance plan members."""
+    balances = await plan_balances(session, plan_id)
+    member_ids = (
+        (
+            await session.execute(
+                select(PlanMember.user_id)
+                .where(PlanMember.plan_id == plan_id)
+                .order_by(PlanMember.user_id.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        BalanceResponse(user_id=user_id, balance_cents=balances.get(user_id, 0))
+        for user_id in member_ids
+    ]
 
 
 def error_body(error: HTTPException | ValueError) -> dict[str, Any]:

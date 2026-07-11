@@ -748,3 +748,70 @@ def test_resync_phase_1b_state_is_complete_and_authoritative() -> None:
     assert final_snapshot["server_version"] == finalized["version"]
     assert restored["plan"]["status"] == "draft"
     assert restored["plan"]["version"] == unfinalized["version"]
+
+
+def test_activity_delete_requires_owner_and_current_expected_version() -> None:
+    with client_context() as client:
+        owner_jwt, plan_id = create_plan(client, f"owner-{uuid4()}")
+        activity = client.post(
+            f"/plans/{plan_id}/activities", json={"name": "Delete me"}, headers=bearer(owner_jwt)
+        ).json()
+        stale = client.delete(
+            f"/plans/{plan_id}/activities/{activity['id']}?expected_version=2",
+            headers=bearer(owner_jwt),
+        )
+        invite = client.post(f"/plans/{plan_id}/invites", headers=bearer(owner_jwt)).json()
+        member_jwt = sync_user(client, f"member-{uuid4()}")
+        assert (
+            client.post(f"/invites/{invite['token']}/join", headers=bearer(member_jwt)).status_code
+            == 200
+        )
+        member = client.delete(
+            f"/plans/{plan_id}/activities/{activity['id']}?expected_version=1",
+            headers=bearer(member_jwt),
+        )
+        owner = client.delete(
+            f"/plans/{plan_id}/activities/{activity['id']}?expected_version={activity['version']}",
+            headers=bearer(owner_jwt),
+        )
+    assert stale.status_code == 409
+    assert member.status_code == 403
+    assert owner.status_code == 204
+
+
+def test_plan_balances_are_authoritative_read_time_ledger_aggregation() -> None:
+    with client_context() as client:
+        owner_email = f"owner-{uuid4()}"
+        owner_jwt, plan_id = create_plan(client, owner_email)
+        invite = client.post(f"/plans/{plan_id}/invites", headers=bearer(owner_jwt)).json()
+        member_jwt = sync_user(client, f"member-{uuid4()}")
+        assert (
+            client.post(f"/invites/{invite['token']}/join", headers=bearer(member_jwt)).status_code
+            == 200
+        )
+        snapshot = client.get(f"/plans/{plan_id}/resync", headers=bearer(owner_jwt)).json()
+        owner_id = next(
+            member["user_id"] for member in snapshot["members"] if member["role"] == "owner"
+        )
+        member_id = next(
+            member["user_id"] for member in snapshot["members"] if member["role"] == "member"
+        )
+        created = client.post(
+            f"/plans/{plan_id}/expenses",
+            json={
+                "description": "Shared meal",
+                "amount_cents": 1001,
+                "paid_by_user_id": owner_id,
+                "participant_user_ids": [owner_id, member_id],
+                "client_operation_id": str(uuid4()),
+            },
+            headers=bearer(owner_jwt),
+        )
+        balances = client.get(f"/plans/{plan_id}/balances", headers=bearer(member_jwt))
+    assert created.status_code == 201
+    assert balances.status_code == 200
+    amounts = {row["user_id"]: row["balance_cents"] for row in balances.json()}
+    assert set(amounts) == {owner_id, member_id}
+    assert sum(amounts.values()) == 0
+    assert amounts[owner_id] > 0
+    assert amounts[member_id] < 0
