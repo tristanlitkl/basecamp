@@ -26,6 +26,7 @@ export type ActivitySummary = {
   lng: string | null;
   estimated_cost_cents: number | null;
   estimated_duration_minutes: number | null;
+  travel_mode: "car" | "plane" | "train" | "bus" | null;
   tags: string[];
   notes: string | null;
   vote: string | null;
@@ -142,6 +143,7 @@ export type CreateActivityInput = {
   address?: string;
   estimated_cost_cents?: number;
   estimated_duration_minutes?: number;
+  travel_mode?: "car" | "plane" | "train" | "bus";
   tags?: string[];
   notes?: string;
   client_operation_id?: string;

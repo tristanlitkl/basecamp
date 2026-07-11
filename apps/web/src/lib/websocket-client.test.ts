@@ -56,6 +56,7 @@ describe("snapshotToPlanDetail", () => {
           lng: null,
           estimated_cost_cents: null,
           estimated_duration_minutes: null,
+          travel_mode: null,
           tags: [],
           notes: null,
           vote: null,

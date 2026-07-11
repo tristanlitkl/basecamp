@@ -73,6 +73,7 @@ class ActivitySummary(BaseModel):
     lng: str | None
     estimated_cost_cents: int | None
     estimated_duration_minutes: int | None
+    travel_mode: str | None
     tags: list[str]
     notes: str | None
     vote: str | None
@@ -147,6 +148,7 @@ def activity_dict(activity: Activity) -> dict[str, Any]:
         "lng": scalar(activity.lng),
         "estimated_cost_cents": activity.estimated_cost_cents,
         "estimated_duration_minutes": activity.estimated_duration_minutes,
+        "travel_mode": activity.travel_mode,
         "tags": activity.tags or [],
         "notes": activity.notes,
         "version": activity.version,
@@ -372,6 +374,7 @@ async def get_plan(
                 lng=str(activity.lng) if activity.lng is not None else None,
                 estimated_cost_cents=activity.estimated_cost_cents,
                 estimated_duration_minutes=activity.estimated_duration_minutes,
+                travel_mode=activity.travel_mode,
                 tags=activity.tags or [],
                 notes=activity.notes,
                 vote=current_vote,

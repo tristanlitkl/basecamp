@@ -24,6 +24,7 @@ class Activity(Base):
     lng: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
     estimated_cost_cents: Mapped[int | None] = mapped_column(Integer)
     estimated_duration_minutes: Mapped[int | None] = mapped_column(Integer)
+    travel_mode: Mapped[str | None] = mapped_column(String(16))
     tags: Mapped[list[str] | None] = mapped_column(JSON)
     notes: Mapped[str | None] = mapped_column(Text)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")

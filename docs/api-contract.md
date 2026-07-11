@@ -40,6 +40,8 @@ Bootstrap rule: do not add generic CRUD resources or placeholder endpoints outsi
 
 ## Phase 1B.75 Coordination
 
+- Activities may include nullable `travel_mode`: `car`, `plane`, `train`, or `bus`. It is persisted on the activity and returned by activity create/edit reads and authoritative `/resync` snapshots.
+
 - `PATCH /auth/me` updates only the authenticated user's Basecamp `display_name`; Google identity claims remain immutable.
 - `/plans/{plan_id}/members` exposes display names and roles, never member emails in the authoritative snapshot.
 - Primary owners manage roles; co-owners may remove regular members only. Removing a membership is permitted even after finalization and immediately revokes plan access while preserving historical user/ledger records.

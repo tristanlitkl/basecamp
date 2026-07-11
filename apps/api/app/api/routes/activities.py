@@ -30,6 +30,7 @@ class ActivityCreate(BaseModel):
     lng: Decimal | None = None
     estimated_cost_cents: int | None = Field(default=None, ge=0)
     estimated_duration_minutes: int | None = Field(default=None, ge=0)
+    travel_mode: str | None = Field(default=None, pattern="^(car|plane|train|bus)$")
     tags: list[str] = Field(default_factory=list)
     notes: str | None = None
     client_operation_id: str | None = Field(default=None, max_length=120)
@@ -43,6 +44,7 @@ class ActivityPatch(BaseModel):
     lng: Decimal | None = None
     estimated_cost_cents: int | None = Field(default=None, ge=0)
     estimated_duration_minutes: int | None = Field(default=None, ge=0)
+    travel_mode: str | None = Field(default=None, pattern="^(car|plane|train|bus)$")
     tags: list[str] | None = None
     notes: str | None = None
     expected_version: int = Field(ge=1)
@@ -53,6 +55,7 @@ class ActivityResponse(BaseModel):
     plan_id: UUID
     name: str
     version: int
+    travel_mode: str | None
 
 
 class VoteRequest(BaseModel):
@@ -113,6 +116,7 @@ async def create_activity(
         lng=payload.lng,
         estimated_cost_cents=payload.estimated_cost_cents,
         estimated_duration_minutes=payload.estimated_duration_minutes,
+        travel_mode=payload.travel_mode,
         tags=payload.tags,
         notes=payload.notes,
         created_by_user_id=user.id,
@@ -125,6 +129,7 @@ async def create_activity(
         "plan_id": activity.plan_id,
         "name": activity.name,
         "version": activity.version,
+        "travel_mode": activity.travel_mode,
     }
     await complete_operation(
         session, claim, activity.id, body, response_status=status.HTTP_201_CREATED
@@ -185,7 +190,11 @@ async def patch_activity(
     )
     await session.commit()
     return ActivityResponse(
-        id=activity.id, plan_id=activity.plan_id, name=activity.name, version=activity.version
+        id=activity.id,
+        plan_id=activity.plan_id,
+        name=activity.name,
+        version=activity.version,
+        travel_mode=activity.travel_mode,
     )
 
 

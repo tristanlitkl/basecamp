@@ -148,8 +148,8 @@ export function createActivity(
   token: string,
   planId: string,
   input: CreateActivityInput
-): Promise<{ id: string; plan_id: string; name: string; version: number }> {
-  return apiFetch<{ id: string; plan_id: string; name: string; version: number }>(token, `/plans/${planId}/activities`, {
+): Promise<{ id: string; plan_id: string; name: string; version: number; travel_mode: "car" | "plane" | "train" | "bus" | null }> {
+  return apiFetch<{ id: string; plan_id: string; name: string; version: number; travel_mode: "car" | "plane" | "train" | "bus" | null }>(token, `/plans/${planId}/activities`, {
     method: "POST",
     body: input
   });
@@ -166,10 +166,11 @@ export function patchActivity(
     address?: string | null;
     estimated_cost_cents?: number | null;
     estimated_duration_minutes?: number | null;
+    travel_mode?: "car" | "plane" | "train" | "bus" | null;
     tags?: string[] | null;
     notes?: string | null;
   }
-): Promise<{ id: string; plan_id: string; name: string; version: number }> {
+): Promise<{ id: string; plan_id: string; name: string; version: number; travel_mode: "car" | "plane" | "train" | "bus" | null }> {
   return apiFetch(token, `/plans/${planId}/activities/${activityId}`, { method: "PATCH", body: input });
 }
 

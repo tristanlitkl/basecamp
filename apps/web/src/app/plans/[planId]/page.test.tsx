@@ -6,6 +6,7 @@ import PlanPage from "@/app/plans/[planId]/page";
 import {
   ApiError,
   changeMemberRole,
+  createActivity,
   createActivitySuggestion,
   createComment,
   createDateSuggestion,
@@ -27,7 +28,7 @@ import {
   resyncPlan,
   setPlanLifecycle,
   syncUser
-  ,upsertDateAvailability
+  ,upsertDateAvailability, voteActivity
 } from "@/lib/api-client";
 import { usePlanSocket } from "@/hooks/usePlanSocket";
 import type { ResyncSnapshot } from "@/types/api";
@@ -59,7 +60,7 @@ function snapshot(role: "owner" | "co_owner" | "member" = "owner", status: "draf
       { id: "pm-1", plan_id: "plan-1", user_id: "user-1", role: "owner", email: "owner@example.com", display_name: "Owner", created_at: "2026-01-01" },
       { id: "pm-2", plan_id: "plan-1", user_id: "user-2", role: "member", email: "member@example.com", display_name: "Member", created_at: "2026-01-01" }
     ],
-    activities: [{ id: "activity-1", version: 3, name: "Kayaking", description: "On the bay", address: "Pier 1", location_name: "Pier 1", lat: null, lng: null, estimated_cost_cents: 2500, estimated_duration_minutes: 90, tags: ["water"], notes: "Bring sunscreen", vote: null, yes_votes: 0, no_votes: 0, maybe_votes: 0 }],
+    activities: [{ id: "activity-1", version: 3, name: "Kayaking", description: "On the bay", address: "Pier 1", location_name: "Pier 1", lat: null, lng: null, estimated_cost_cents: 2500, estimated_duration_minutes: 90, travel_mode: "car", tags: ["water"], notes: "Bring sunscreen", vote: null, yes_votes: 0, no_votes: 0, maybe_votes: 0 }],
     activity_scores: { "activity-1": { yes: 1, maybe: 0, no: 0 } }, votes: [],
     itinerary_items: [
       { id: "item-2", plan_id: "plan-1", activity_id: null, title: "Second", position_key: "2000", starts_at: null, ends_at: null, version: 2 },
@@ -138,7 +139,28 @@ describe("Phase 1B.5 planning UI", () => {
     fireEvent.click(within(activity).getByRole("button", { name: "Edit" }));
     fireEvent.change(within(activity).getByLabelText("Name"), { target: { value: "Sea kayaking" } });
     fireEvent.click(within(activity).getByRole("button", { name: "Save activity" }));
-    await waitFor(() => expect(patchActivity).toHaveBeenCalledWith("app-jwt", "plan-1", "activity-1", expect.objectContaining({ expected_version: 3, name: "Sea kayaking", estimated_cost_cents: 2500 })));
+    await waitFor(() => expect(patchActivity).toHaveBeenCalledWith("app-jwt", "plan-1", "activity-1", expect.objectContaining({ expected_version: 3, name: "Sea kayaking", estimated_cost_cents: 2500, estimated_duration_minutes: 90, travel_mode: "car" })));
+    expect(resyncPlan).toHaveBeenCalledTimes(3);
+  });
+
+  it("edits an activity with a blank optional cost, converts duration fields, and reports validation errors", async () => {
+    const next = snapshot(); next.activities[0].estimated_cost_cents = null; next.activities[0].estimated_duration_minutes = 125;
+    await renderPlan(next);
+    const activity = screen.getByRole("heading", { name: "Kayaking" }).closest("article")!;
+    fireEvent.click(within(activity).getByRole("button", { name: "Edit" }));
+    const form = within(activity).getByRole("button", { name: "Save activity" }).closest("form")!;
+    expect((within(form).getAllByLabelText("Hours")[0] as HTMLInputElement).value).toBe("2");
+    expect((within(form).getAllByLabelText("Minutes")[0] as HTMLInputElement).value).toBe("5");
+    fireEvent.change(within(form).getAllByLabelText("Hours")[0], { target: { value: "3" } });
+    fireEvent.change(within(form).getAllByLabelText("Minutes")[0], { target: { value: "15" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Save activity" }));
+    await waitFor(() => expect(patchActivity).toHaveBeenCalledWith("app-jwt", "plan-1", "activity-1", expect.objectContaining({ estimated_cost_cents: null, estimated_duration_minutes: 195 })));
+
+    fireEvent.click(within(activity).getByRole("button", { name: "Edit" }));
+    const invalidForm = within(activity).getByRole("button", { name: "Save activity" }).closest("form")!;
+    fireEvent.change(within(invalidForm).getAllByLabelText("Minutes")[0], { target: { value: "60" } });
+    fireEvent.click(within(invalidForm).getByRole("button", { name: "Save activity" }));
+    expect(await screen.findByText(/positive duration with minutes from 0 to 59/)).toBeTruthy();
   });
 
   it("deletes an activity with its current version and performs authoritative resync", async () => {
@@ -243,7 +265,29 @@ describe("Phase 1B.5 planning UI", () => {
     expect(screen.getByRole("heading", { name: "Kayaking" }).closest("article")?.textContent).toContain("Yes 2");
     expect(screen.getByText(/Votes are anonymous/)).toBeTruthy();
     expect(screen.queryByText(/Member \(yes\)/)).toBeNull();
-    expect(screen.getByRole("button", { name: "yes selected" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Vote yes" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("renders compact accessible vote controls, sends their contract values, and persists travel mode", async () => {
+    await renderPlan();
+    fireEvent.click(screen.getByRole("button", { name: "+ Add activity" }));
+    const createForm = screen.getByRole("button", { name: "Save activity" }).closest("form")!;
+    fireEvent.change(within(createForm).getByLabelText("Name"), { target: { value: "Gallery" } });
+    fireEvent.change(within(createForm).getByLabelText("Hours"), { target: { value: "1" } });
+    fireEvent.change(within(createForm).getByLabelText("Minutes"), { target: { value: "30" } });
+    fireEvent.click(within(createForm).getByRole("button", { name: "Travel by Train" }));
+    fireEvent.click(within(createForm).getByRole("button", { name: "Save activity" }));
+    await waitFor(() => expect(createActivity).toHaveBeenCalledWith("app-jwt", "plan-1", expect.objectContaining({ name: "Gallery", estimated_duration_minutes: 90, travel_mode: "train" })));
+    expect(screen.getByRole("button", { name: "Vote yes" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Vote maybe" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Vote no" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Vote maybe" }));
+    await waitFor(() => expect(voteActivity).toHaveBeenCalledWith("app-jwt", "plan-1", "activity-1", "maybe"));
+    const activity = screen.getByRole("heading", { name: "Kayaking" }).closest("article")!;
+    fireEvent.click(within(activity).getByRole("button", { name: "Edit" }));
+    fireEvent.click(within(activity).getByRole("button", { name: "Travel by Plane" }));
+    fireEvent.click(within(activity).getByRole("button", { name: "Save activity" }));
+    await waitFor(() => expect(patchActivity).toHaveBeenCalledWith("app-jwt", "plan-1", "activity-1", expect.objectContaining({ travel_mode: "plane" })));
   });
 
   it("Phase 1B.75 comments suggestions and date coordination use operation IDs and resync", async () => {

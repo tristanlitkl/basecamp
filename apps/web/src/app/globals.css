@@ -101,9 +101,20 @@ fieldset input { width: auto; min-height: auto; }
 .activity-card { padding: 18px; border: 1px solid var(--border); border-radius: 15px; background: white; }
 .metadata { display: flex; flex-wrap: wrap; gap: 7px; margin: 11px 0; }
 .chip { padding: 5px 8px; border-radius: 8px; background: #f0f4f1; color: #52675f; font-size: .78rem; font-weight: 650; }
-.vote-control { display: inline-grid; grid-template-columns: repeat(3, 1fr); padding: 3px; border: 1px solid var(--border); border-radius: 11px; background: #f3f5f1; }
-.vote-control .btn { min-height: 34px; padding: 5px 11px; border: 0; background: transparent; color: var(--muted); }
-.vote-control .selected { background: white; color: var(--brand); box-shadow: 0 1px 3px rgb(16 24 40 / 12%); }
+.vote-control { display: inline-grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.vote-button { display: grid; place-items: center; gap: 2px; width: 52px; height: 52px; padding: 4px; border: 1px solid var(--border); border-radius: 10px; background: white; color: var(--muted); font-size: .68rem; font-weight: 800; cursor: pointer; }
+.vote-button > span:first-child { font-size: 1rem; line-height: 1; filter: grayscale(1); }
+.vote-button:hover:not(:disabled) { border-color: #aac8bc; background: #f5faf7; }
+.vote-button.selected { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-dark); box-shadow: inset 0 0 0 1px var(--brand); }
+.vote-button.selected > span:first-child { filter: none; }
+.vote-button.no.selected { border-color: #c93838; background: #fff3f3; color: #a72e2e; box-shadow: inset 0 0 0 1px #c93838; }
+.vote-button.maybe.selected { border-color: #b57913; background: #fff8e8; color: #8b5d0d; box-shadow: inset 0 0 0 1px #b57913; }
+.duration-input { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.duration-input legend, .travel-selector legend { color: #344054; font-size: .86rem; font-weight: 700; }
+.travel-selector { display: flex; flex-wrap: wrap; gap: 8px; }
+.travel-mode { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; background: white; color: var(--text); font-weight: 700; cursor: pointer; }
+.travel-mode:hover:not(:disabled) { border-color: #aac8bc; background: #f5faf7; }
+.travel-mode.selected { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-dark); box-shadow: inset 0 0 0 1px var(--brand); }
 .conversation { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 9px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .conversation .avatar { width: 32px; height: 32px; font-size: .76rem; }
 details { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 12px; }
