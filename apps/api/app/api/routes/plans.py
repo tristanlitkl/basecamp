@@ -13,11 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, require_plan_member, require_plan_owner
 from app.db.base import get_session
 from app.models.activity import Activity
+from app.models.coordination import ActivityComment, ActivitySuggestion
 from app.models.event import PlanEvent
 from app.models.expense import Expense, ExpenseSplit
 from app.models.itinerary import ItineraryItem
 from app.models.ledger import LedgerEntry
-from app.models.plan import Plan, PlanMember
+from app.models.plan import Plan, PlanDateAvailability, PlanDateSuggestion, PlanMember
 from app.models.user import User
 from app.models.vote import ActivityVote
 from app.services.event_service import append_plan_event
@@ -44,6 +45,7 @@ class PlanSummary(BaseModel):
     starts_on: datetime | None
     ends_on: datetime | None
     max_drive_minutes: int | None
+    vote_visibility: str
 
 
 class PlanPatch(BaseModel):
@@ -84,6 +86,7 @@ class PlanDetail(PlanSummary):
 
 
 class ResyncSnapshot(BaseModel):
+    current_user_id: str
     plan: dict[str, Any]
     members: list[dict[str, Any]]
     activities: list[dict[str, Any]]
@@ -94,6 +97,10 @@ class ResyncSnapshot(BaseModel):
     expense_splits: list[dict[str, Any]]
     ledger_entries: list[dict[str, Any]]
     latest_plan_events: list[dict[str, Any]]
+    activity_comments: list[dict[str, Any]]
+    activity_suggestions: list[dict[str, Any]]
+    date_availability: list[dict[str, Any]]
+    date_suggestions: list[dict[str, Any]]
     server_version: int
 
 
@@ -110,6 +117,7 @@ def serialize_plan(plan: Plan, role: str) -> PlanSummary:
         starts_on=plan.starts_on,
         ends_on=plan.ends_on,
         max_drive_minutes=plan.max_drive_minutes,
+        vote_visibility=plan.vote_visibility,
     )
 
 
@@ -482,6 +490,41 @@ async def resync_plan(
         .scalars()
         .all()
     )
+    comments = (
+        await session.execute(
+            select(ActivityComment, User)
+            .join(User, User.id == ActivityComment.author_id)
+            .where(ActivityComment.plan_id == plan_id)
+            .order_by(ActivityComment.created_at.asc())
+        )
+    ).all()
+    suggestions = (
+        await session.execute(
+            select(ActivitySuggestion, User)
+            .join(User, User.id == ActivitySuggestion.author_id)
+            .where(ActivitySuggestion.plan_id == plan_id)
+            .order_by(ActivitySuggestion.created_at.asc())
+        )
+    ).all()
+    availability_rows = (
+        (
+            await session.execute(
+                select(PlanDateAvailability)
+                .where(PlanDateAvailability.plan_id == plan_id)
+                .order_by(PlanDateAvailability.date.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    date_suggestions = (
+        await session.execute(
+            select(PlanDateSuggestion, User)
+            .join(User, User.id == PlanDateSuggestion.suggested_by_user_id)
+            .where(PlanDateSuggestion.plan_id == plan_id)
+            .order_by(PlanDateSuggestion.created_at.asc())
+        )
+    ).all()
 
     activity_scores = {
         str(activity.id): {
@@ -497,6 +540,7 @@ async def resync_plan(
     }
 
     return ResyncSnapshot(
+        current_user_id=str(membership.user_id),
         plan=plan_dict(plan, membership.role),
         members=[
             {
@@ -504,7 +548,6 @@ async def resync_plan(
                 "plan_id": str(member.plan_id),
                 "user_id": str(member.user_id),
                 "role": member.role,
-                "email": user.email,
                 "display_name": user.display_name,
                 "created_at": scalar(member.created_at),
             }
@@ -527,7 +570,11 @@ async def resync_plan(
             }
             for item in itinerary_items
         ],
-        votes=[vote_dict(vote) for vote in votes],
+        votes=[
+            vote_dict(vote)
+            for vote in votes
+            if plan.vote_visibility == "public" or vote.user_id == membership.user_id
+        ],
         expenses=[
             {
                 "id": str(expense.id),
@@ -570,6 +617,59 @@ async def resync_plan(
             }
             for entry in ledger_entries
         ],
-        latest_plan_events=[event_dict(event) for event in events],
+        latest_plan_events=[
+            event_dict(event)
+            for event in events
+            if plan.vote_visibility != "anonymous" or event.event_type != "activity.vote_updated"
+        ],
+        activity_comments=[
+            {
+                "id": str(comment.id),
+                "plan_id": str(comment.plan_id),
+                "activity_id": str(comment.activity_id),
+                "author_id": str(comment.author_id),
+                "author_display_name": author.display_name,
+                "body": comment.body,
+                "version": comment.version,
+                "deleted_at": scalar(comment.deleted_at),
+                "created_at": scalar(comment.created_at),
+                "updated_at": scalar(comment.updated_at),
+            }
+            for comment, author in comments
+        ],
+        activity_suggestions=[
+            {
+                "id": str(suggestion.id),
+                "activity_id": str(suggestion.activity_id),
+                "author_id": str(suggestion.author_id),
+                "author_display_name": author.display_name,
+                "suggestion_type": suggestion.suggestion_type,
+                "proposed_changes_json": suggestion.proposed_changes_json,
+                "message": suggestion.message,
+                "status": suggestion.status,
+                "created_at": scalar(suggestion.created_at),
+            }
+            for suggestion, author in suggestions
+        ],
+        date_availability=[
+            {
+                "date": availability.date.isoformat(),
+                "status": availability.status,
+                "is_current_user": availability.user_id == membership.user_id,
+            }
+            for availability in availability_rows
+        ],
+        date_suggestions=[
+            {
+                "id": str(suggestion.id),
+                "starts_on": suggestion.starts_on.isoformat(),
+                "ends_on": suggestion.ends_on.isoformat(),
+                "message": suggestion.message,
+                "status": suggestion.status,
+                "author_id": str(suggestion.suggested_by_user_id),
+                "author_display_name": author.display_name,
+            }
+            for suggestion, author in date_suggestions
+        ],
         server_version=plan.version,
     )

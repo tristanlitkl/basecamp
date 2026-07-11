@@ -21,7 +21,9 @@ def upgrade() -> None:
     op.create_unique_constraint("uq_users_auth_subject", "users", ["auth_subject"])
 
     op.add_column("activities", sa.Column("address", sa.String(length=255), nullable=True))
-    op.add_column("activities", sa.Column("estimated_duration_minutes", sa.Integer(), nullable=True))
+    op.add_column(
+        "activities", sa.Column("estimated_duration_minutes", sa.Integer(), nullable=True)
+    )
     op.add_column("activities", sa.Column("tags", sa.JSON(), nullable=True))
     op.add_column("activities", sa.Column("notes", sa.Text(), nullable=True))
 
@@ -31,7 +33,12 @@ def upgrade() -> None:
         sa.Column("plan_id", sa.Uuid(), nullable=False),
         sa.Column("created_by_user_id", sa.Uuid(), nullable=False),
         sa.Column("token_hash", sa.String(length=64), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["created_by_user_id"], ["users.id"]),
         sa.ForeignKeyConstraint(["plan_id"], ["plans.id"]),
         sa.PrimaryKeyConstraint("id"),
@@ -43,8 +50,18 @@ def upgrade() -> None:
         sa.Column("activity_id", sa.Uuid(), nullable=False),
         sa.Column("user_id", sa.Uuid(), nullable=False),
         sa.Column("vote", sa.String(length=16), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["activity_id"], ["activities.id"]),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"]),
         sa.PrimaryKeyConstraint("id"),

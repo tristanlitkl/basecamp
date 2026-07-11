@@ -88,9 +88,20 @@ async def require_plan_member(
 async def require_plan_owner(
     membership: PlanMember = Depends(require_plan_member),
 ) -> PlanMember:
-    if membership.role != "owner":
+    if membership.role not in {"owner", "co_owner"}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"error": "owner_role_required"},
+        )
+    return membership
+
+
+async def require_primary_owner(
+    membership: PlanMember = Depends(require_plan_member),
+) -> PlanMember:
+    if membership.role != "owner":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "primary_owner_role_required"},
         )
     return membership

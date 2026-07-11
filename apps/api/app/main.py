@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import activities, auth, expenses, invites, itinerary, plans
+from app.api.routes import activities, auth, coordination, expenses, invites, itinerary, plans
 from app.config import get_settings
 from app.realtime import websocket_routes
 
@@ -30,4 +30,5 @@ app.include_router(invites.router)
 app.include_router(activities.router)
 app.include_router(itinerary.router)
 app.include_router(expenses.router)
+app.include_router(coordination.router)
 app.include_router(websocket_routes.router)

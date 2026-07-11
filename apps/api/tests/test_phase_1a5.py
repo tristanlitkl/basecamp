@@ -100,6 +100,7 @@ def test_resync_returns_complete_authoritative_snapshot():
     assert response.status_code == 200
     body = response.json()
     assert set(body) == {
+        "current_user_id",
         "plan",
         "members",
         "activities",
@@ -110,6 +111,10 @@ def test_resync_returns_complete_authoritative_snapshot():
         "expense_splits",
         "ledger_entries",
         "latest_plan_events",
+        "activity_comments",
+        "activity_suggestions",
+        "date_availability",
+        "date_suggestions",
         "server_version",
     }
     assert body["plan"]["id"] == plan_id

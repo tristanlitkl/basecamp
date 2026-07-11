@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 
-import { createPlan, listPlans, syncUser } from "@/lib/api-client";
+import { createPlan, getMe, listPlans, syncUser, updateDisplayName } from "@/lib/api-client";
 import type { PlanSummary } from "@/types/api";
 
 export default function DashboardPage() {
@@ -14,6 +14,7 @@ export default function DashboardPage() {
   const [plans, setPlans] = useState<PlanSummary[]>([]);
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState("");
 
   useEffect(() => {
     const appJwt = session?.appJwt;
@@ -24,6 +25,7 @@ export default function DashboardPage() {
     async function load(token: string) {
       try {
         await syncUser(token);
+        setDisplayName((await getMe(token)).display_name);
         setPlans(await listPlans(token));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load dashboard");
@@ -83,6 +85,11 @@ export default function DashboardPage() {
           style={{ flex: 1, padding: 10 }}
         />
         <button type="submit">Create plan</button>
+      </form>
+
+      <form onSubmit={async (event) => { event.preventDefault(); if (!session?.appJwt) return; try { const user = await updateDisplayName(session.appJwt, displayName); setDisplayName(user.display_name); } catch { setError("Unable to save your Basecamp name."); } }} style={{ display: "flex", gap: 8, margin: "16px 0" }}>
+        <label>Your name in Basecamp <input value={displayName} maxLength={50} onChange={(event) => setDisplayName(event.target.value)} /></label>
+        <button type="submit">Save name</button>
       </form>
 
       {error && <p style={{ color: "crimson" }}>{error}</p>}

@@ -9,12 +9,18 @@ import { FormEvent, useEffect, useState } from "react";
 import {
   ApiError,
   createActivity,
+  createActivitySuggestion,
+  createComment,
+  createDateSuggestion,
   createExpense,
   createInvite,
   createItineraryItem,
   deleteActivity,
   deleteExpense,
   deleteItineraryItem,
+  changeMemberRole,
+  decideActivitySuggestion,
+  decideDateSuggestion,
   getPlanBalances,
   isAuthenticationError,
   isPlanMembershipError,
@@ -26,6 +32,9 @@ import {
   resyncPlan,
   setPlanLifecycle,
   syncUser,
+  removeMember,
+  updateVoteVisibility,
+  upsertDateAvailability,
   voteActivity
 } from "@/lib/api-client";
 import { formatCents, parseDollarCents } from "@/lib/money";
@@ -94,6 +103,11 @@ export default function PlanPage() {
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [commentBodies, setCommentBodies] = useState<Record<string, string>>({});
+  const [availabilityDate, setAvailabilityDate] = useState("");
+  const [availabilityStatus, setAvailabilityStatus] = useState<"available" | "maybe" | "unavailable">("available");
+  const [dateSuggestionStart, setDateSuggestionStart] = useState("");
+  const [dateSuggestionEnd, setDateSuggestionEnd] = useState("");
   const [authFailed, setAuthFailed] = useState(false);
   const [authorizationFailed, setAuthorizationFailed] = useState(false);
 
@@ -180,6 +194,7 @@ export default function PlanPage() {
 
   const finalized = plan.status === "finalized";
   const disabled = finalized || pending;
+  const canManage = plan.role === "owner" || plan.role === "co_owner";
   const itinerary = [...snapshot.itinerary_items].sort((left, right) => comparePositionKeys(left.position_key, right.position_key));
   const toggleParticipants = (userId: string, selected: string[], setSelected: (next: string[]) => void) =>
     setSelected(selected.includes(userId) ? selected.filter((id) => id !== userId) : [...selected, userId]);
@@ -204,11 +219,14 @@ export default function PlanPage() {
     </section>
     {error && <p role="alert" style={{ color: "crimson" }}>{error}</p>}
     {pending && <p role="status">Saving and syncing latest state…</p>}
-    {plan.role === "owner" && <button disabled={pending} onClick={() => void mutate(() => setPlanLifecycle(session.appJwt!, planId, finalized ? "unfinalize" : "finalize", plan.version), true)}>{finalized ? "Unfinalize plan" : "Finalize plan"}</button>}
+    {canManage && <button disabled={pending} onClick={() => void mutate(() => setPlanLifecycle(session.appJwt!, planId, finalized ? "unfinalize" : "finalize", plan.version), true)}>{finalized ? "Unfinalize plan" : "Finalize plan"}</button>}
+    {canManage && <label>Vote visibility <select value={plan.vote_visibility} disabled={disabled} onChange={(event) => void mutate(() => updateVoteVisibility(session.appJwt!, planId, event.target.value as "public" | "anonymous", plan.version))}><option value="public">Public votes</option><option value="anonymous">Anonymous votes</option></select></label>}
+
+    <section><h2>Members</h2>{snapshot.members.map((member) => <article key={member.user_id}><strong>{member.display_name}</strong> · {member.role} · joined {member.created_at.slice(0, 10)}{member.user_id === snapshot.current_user_id && " · you"}{plan.role === "owner" && member.role !== "owner" && member.user_id !== snapshot.current_user_id && <><button disabled={disabled} onClick={() => void mutate(() => changeMemberRole(session.appJwt!, planId, member.user_id, member.role === "co_owner" ? "member" : "co_owner", crypto.randomUUID()))}>{member.role === "co_owner" ? "Demote" : "Promote"}</button><button disabled={disabled} onClick={() => { if (window.confirm(`Remove ${member.display_name}?`)) void mutate(() => removeMember(session.appJwt!, planId, member.user_id, crypto.randomUUID())); }}>Remove</button></>}{plan.role === "co_owner" && member.role === "member" && member.user_id !== snapshot.current_user_id && <button disabled={disabled} onClick={() => { if (window.confirm(`Remove ${member.display_name}?`)) void mutate(() => removeMember(session.appJwt!, planId, member.user_id, crypto.randomUUID())); }}>Remove</button>}</article>)}</section>
 
     <section>
       <h2>Plan constraints</h2>
-      {plan.role === "owner" ? <form onSubmit={(event: FormEvent<HTMLFormElement>) => {
+      {canManage ? <form onSubmit={(event: FormEvent<HTMLFormElement>) => {
         event.preventDefault(); const form = new FormData(event.currentTarget); const budget = String(form.get("budget") ?? "").trim();
         const cents = budget === "" ? null : parseDollarCents(budget);
         if (cents === null) { setError("Enter a valid budget with at most two decimal places."); return; }
@@ -241,11 +259,11 @@ export default function PlanPage() {
         <label>Notes <input value={activityNotes} onChange={(event) => setActivityNotes(event.target.value)} disabled={disabled} /></label>
         <button disabled={disabled}>Add activity</button>
       </form>
-      {plan.activities.map((activity) => <article key={activity.id}><h3>{activity.name}</h3><p>{activity.description}</p><p>{activity.address}{activity.estimated_cost_cents !== null && ` · ${formatCents(activity.estimated_cost_cents)}`}{activity.estimated_duration_minutes !== null && ` · ${activity.estimated_duration_minutes} min`}{activity.tags.length > 0 && ` · ${activity.tags.join(", ")}`}{activity.notes && ` · ${activity.notes}`}</p><p>Yes {activity.yes_votes} · Maybe {activity.maybe_votes} · No {activity.no_votes}</p>
-        <div>{(["yes", "maybe", "no"] as const).map((vote) => <button key={vote} disabled={disabled} onClick={() => void mutate(() => voteActivity(session.appJwt!, planId, activity.id, vote))}>{activity.vote === vote ? `${vote} selected` : vote}</button>)} <button disabled={disabled} onClick={() => setEditingActivity(activity)}>Edit</button>{plan.role === "owner" && <button disabled={disabled} onClick={() => { if (window.confirm(`Delete ${activity.name}?`)) void mutate(() => deleteActivity(session.appJwt!, planId, activity.id, activity.version)); }}>Delete</button>}</div>
+      {plan.activities.map((activity) => <article key={activity.id}><h3>{activity.name}</h3><p>{activity.description}</p><p>{activity.address}{activity.estimated_cost_cents !== null && ` · ${formatCents(activity.estimated_cost_cents)}`}{activity.estimated_duration_minutes !== null && ` · ${activity.estimated_duration_minutes} min`}{activity.tags.length > 0 && ` · ${activity.tags.join(", ")}`}{activity.notes && ` · ${activity.notes}`}</p><p>Yes {activity.yes_votes} · Maybe {activity.maybe_votes} · No {activity.no_votes}</p>{plan.vote_visibility === "public" && <p>Votes: {snapshot.votes.filter((vote) => (vote as { activity_id?: string }).activity_id === activity.id).map((vote) => { const record = vote as { user_id?: string; vote?: string }; return `${displayMember(snapshot, String(record.user_id))} (${String(record.vote)})`; }).join(", ") || "No votes yet"}</p>}{plan.vote_visibility === "anonymous" && <p>Votes are anonymous; only totals and your own choice are shown.</p>}
+        <div>{(["yes", "maybe", "no"] as const).map((vote) => <button key={vote} disabled={disabled} onClick={() => void mutate(() => voteActivity(session.appJwt!, planId, activity.id, vote))}>{activity.vote === vote ? `${vote} selected` : vote}</button>)} <button disabled={disabled} onClick={() => setEditingActivity(activity)}>Edit</button>{canManage && <button disabled={disabled} onClick={() => { if (window.confirm(`Delete ${activity.name}?`)) void mutate(() => deleteActivity(session.appJwt!, planId, activity.id, activity.version)); }}>Delete</button>}</div>
         {editingActivity?.id === activity.id && <form onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const form = new FormData(event.currentTarget); const cost = String(form.get("cost") ?? "").trim(); const cents = cost === "" ? null : parseDollarCents(cost); const duration = String(form.get("duration") ?? "").trim(); if (cents === null || (duration && !/^\d+$/.test(duration))) { setError("Use a valid cost and a whole-number duration."); return; } void mutate(() => patchActivity(session.appJwt!, planId, activity.id, { expected_version: activity.version, name: String(form.get("name") ?? "").trim(), description: String(form.get("description") ?? "") || null, address: String(form.get("address") ?? "") || null, estimated_cost_cents: cents, estimated_duration_minutes: duration ? Number(duration) : null, tags: String(form.get("tags") ?? "").split(",").map((tag) => tag.trim()).filter(Boolean), notes: String(form.get("notes") ?? "") || null })); setEditingActivity(null); }}>
           <label>Name <input name="name" defaultValue={activity.name} disabled={disabled} /></label><label>Description <input name="description" defaultValue={activity.description ?? ""} disabled={disabled} /></label><label>Address <input name="address" defaultValue={activity.address ?? ""} disabled={disabled} /></label><label>Cost <input name="cost" defaultValue={activity.estimated_cost_cents === null ? "" : (activity.estimated_cost_cents / 100).toFixed(2)} disabled={disabled} /></label><label>Duration <input name="duration" defaultValue={activity.estimated_duration_minutes ?? ""} disabled={disabled} /></label><label>Tags <input name="tags" defaultValue={activity.tags.join(", ")} disabled={disabled} /></label><label>Notes <input name="notes" defaultValue={activity.notes ?? ""} disabled={disabled} /></label><button disabled={disabled}>Save activity</button><button type="button" onClick={() => setEditingActivity(null)}>Cancel</button>
-        </form>}</article>)}
+        </form>}<details><summary>Discussion ({snapshot.activity_comments.filter((comment) => comment.activity_id === activity.id && !comment.deleted_at).length})</summary>{snapshot.activity_comments.filter((comment) => comment.activity_id === activity.id).map((comment) => <p key={comment.id}>{comment.deleted_at ? "Comment deleted" : `${comment.author_display_name}: ${comment.body}`}</p>)}<form onSubmit={(event) => { event.preventDefault(); const body = commentBodies[activity.id]?.trim(); if (body) { void mutate(() => createComment(session.appJwt!, planId, activity.id, body, crypto.randomUUID())); setCommentBodies((current) => ({ ...current, [activity.id]: "" })); } }}><label>Comment <input value={commentBodies[activity.id] ?? ""} onChange={(event) => setCommentBodies((current) => ({ ...current, [activity.id]: event.target.value }))} /></label><button disabled={pending}>Post comment</button></form><form onSubmit={(event) => { event.preventDefault(); const message = String(new FormData(event.currentTarget).get("suggestion") ?? ""); if (message.trim()) void mutate(() => createActivitySuggestion(session.appJwt!, planId, activity.id, { suggestion_type: "general_modification", proposed_changes_json: { notes: message.trim() }, message, client_operation_id: crypto.randomUUID() })); }}><label>Suggest a change <input name="suggestion" /></label><button disabled={pending}>Submit suggestion</button></form>{snapshot.activity_suggestions.filter((suggestion) => suggestion.activity_id === activity.id).map((suggestion) => <p key={suggestion.id}>{suggestion.author_display_name}: {suggestion.message} · {suggestion.status}{canManage && suggestion.status === "open" && <><button disabled={disabled} onClick={() => void mutate(() => decideActivitySuggestion(session.appJwt!, planId, activity.id, suggestion.id, "accept", activity.version, crypto.randomUUID()))}>Accept</button><button disabled={pending} onClick={() => void mutate(() => decideActivitySuggestion(session.appJwt!, planId, activity.id, suggestion.id, "dismiss", activity.version, crypto.randomUUID()))}>Dismiss</button></>}</p>)}</details></article>)}
     </section>
 
     <section><h2>Itinerary</h2><form onSubmit={(event: FormEvent) => { event.preventDefault(); if (!itineraryTitle.trim()) { setError("Enter an itinerary title."); return; } void mutate(() => createItineraryItem(session.appJwt!, planId, { title: itineraryTitle.trim(), client_operation_id: crypto.randomUUID() })); setItineraryTitle(""); }}><label>Item <input value={itineraryTitle} onChange={(event) => setItineraryTitle(event.target.value)} disabled={disabled} /></label><button disabled={disabled}>Add item</button></form>
@@ -256,7 +274,8 @@ export default function PlanPage() {
         {editingExpense?.id === expense.id && <form onSubmit={(event) => { event.preventDefault(); const cents = parseDollarCents(editExpenseAmount); if (!editExpenseDescription.trim() || cents === null || cents <= 0 || !editExpensePayer || editExpenseParticipants.length === 0) { setError("Enter a description, valid positive amount, payer, and participant list."); return; } void mutate(() => patchExpense(session.appJwt!, planId, expense.id, { description: editExpenseDescription.trim(), amount_cents: cents, paid_by_user_id: editExpensePayer, participant_user_ids: editExpenseParticipants, expected_version: expense.version, client_operation_id: crypto.randomUUID() })); setEditingExpense(null); }}><label>Edit description <input value={editExpenseDescription} onChange={(event) => setEditExpenseDescription(event.target.value)} disabled={disabled} /></label><label>Amount <input value={editExpenseAmount} onChange={(event) => setEditExpenseAmount(event.target.value)} disabled={disabled} /></label><label>Payer <select value={editExpensePayer} onChange={(event) => setEditExpensePayer(event.target.value)} disabled={disabled}>{snapshot.members.map((member) => <option key={member.user_id} value={member.user_id}>{member.display_name}</option>)}</select></label><fieldset disabled={disabled}><legend>Split among</legend>{snapshot.members.map((member) => <label key={member.user_id}><input type="checkbox" checked={editExpenseParticipants.includes(member.user_id)} onChange={() => toggleParticipants(member.user_id, editExpenseParticipants, setEditExpenseParticipants)} />{member.display_name}</label>)}</fieldset><button disabled={disabled}>Save expense</button><button type="button" onClick={() => setEditingExpense(null)}>Cancel</button></form>}</article>)}</section>
 
     <section><h2>Balances</h2>{balances.map((balance) => <p key={balance.user_id}>{displayMember(snapshot, balance.user_id)}: {formatCents(balance.balance_cents)}</p>)}</section>
+    <section><h2>Date coordination</h2><p>Authoritative dates: {plan.starts_on?.slice(0, 10) ?? "not set"} – {plan.ends_on?.slice(0, 10) ?? "not set"}</p><form onSubmit={(event) => { event.preventDefault(); if (availabilityDate) void mutate(() => upsertDateAvailability(session.appJwt!, planId, availabilityDate, availabilityStatus)); }}><label>Date <input type="date" value={availabilityDate} onChange={(event) => setAvailabilityDate(event.target.value)} /></label><label>Availability <select value={availabilityStatus} onChange={(event) => setAvailabilityStatus(event.target.value as typeof availabilityStatus)}><option value="available">Available</option><option value="maybe">Maybe</option><option value="unavailable">Unavailable</option></select></label><button disabled={pending}>Save availability</button></form><p>{snapshot.date_availability.map((entry) => `${entry.date}: ${entry.status}${entry.is_current_user ? " (you)" : ""}`).join(" · ") || "No availability yet."}</p><form onSubmit={(event) => { event.preventDefault(); if (dateSuggestionStart && dateSuggestionEnd) void mutate(() => createDateSuggestion(session.appJwt!, planId, dateSuggestionStart, dateSuggestionEnd, crypto.randomUUID())); }}><label>Suggested start <input type="date" value={dateSuggestionStart} onChange={(event) => setDateSuggestionStart(event.target.value)} /></label><label>Suggested end <input type="date" value={dateSuggestionEnd} onChange={(event) => setDateSuggestionEnd(event.target.value)} /></label><button disabled={pending}>Suggest dates</button></form>{snapshot.date_suggestions.map((suggestion) => <p key={suggestion.id}>{suggestion.author_display_name} suggested {suggestion.starts_on}–{suggestion.ends_on} · {suggestion.status}{canManage && suggestion.status === "open" && <><button disabled={disabled} onClick={() => void mutate(() => decideDateSuggestion(session.appJwt!, planId, suggestion.id, "accept", plan.version, crypto.randomUUID()))}>Accept</button><button disabled={pending} onClick={() => void mutate(() => decideDateSuggestion(session.appJwt!, planId, suggestion.id, "dismiss", plan.version, crypto.randomUUID()))}>Dismiss</button></>}</p>)}</section>
     <details><summary>Developer ledger ({snapshot.ledger_entries.length} entries)</summary><p>The immutable ledger is read-only.</p></details>
-    <section>{plan.role === "owner" && <button disabled={disabled} onClick={() => void mutate(async () => { const invite = await createInvite(session.appJwt!, planId); setInviteToken(invite.token); })}>Create invite</button>}{inviteToken && <code>{typeof window === "undefined" ? inviteToken : `${window.location.origin}/invites/${inviteToken}`}</code>}</section>
+    <section>{canManage && <button disabled={disabled} onClick={() => void mutate(async () => { const invite = await createInvite(session.appJwt!, planId); setInviteToken(invite.token); })}>Create invite</button>}{inviteToken && <code>{typeof window === "undefined" ? inviteToken : `${window.location.origin}/invites/${inviteToken}`}</code>}</section>
   </main>;
 }

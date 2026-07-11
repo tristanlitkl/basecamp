@@ -87,6 +87,10 @@ export function getMe(token: string): Promise<User> {
   return apiFetch<User>(token, "/auth/me");
 }
 
+export function updateDisplayName(token: string, display_name: string): Promise<User> {
+  return apiFetch<User>(token, "/auth/me", { method: "PATCH", body: { display_name } });
+}
+
 export function listPlans(token: string): Promise<PlanSummary[]> {
   return apiFetch<PlanSummary[]>(token, "/plans");
 }
@@ -116,11 +120,29 @@ export function createInvite(token: string, planId: string): Promise<{ token: st
   });
 }
 
-export function joinInvite(token: string, inviteToken: string): Promise<{ plan_id: string; role: string }> {
+export function joinInvite(token: string, inviteToken: string, display_name?: string): Promise<{ plan_id: string; role: string }> {
   return apiFetch<{ plan_id: string; role: string }>(token, `/invites/${inviteToken}/join`, {
-    method: "POST"
+    method: "POST", body: display_name ? { display_name } : undefined
   });
 }
+
+export function changeMemberRole(token: string, planId: string, userId: string, role: "co_owner" | "member", client_operation_id: string) {
+  return apiFetch(token, `/plans/${planId}/members/${userId}/role`, { method: "PATCH", body: { role, client_operation_id } });
+}
+export function removeMember(token: string, planId: string, userId: string, client_operation_id: string): Promise<void> {
+  return apiFetch(token, `/plans/${planId}/members/${userId}?client_operation_id=${encodeURIComponent(client_operation_id)}`, { method: "DELETE" });
+}
+export function updateVoteVisibility(token: string, planId: string, vote_visibility: "public" | "anonymous", expected_version: number) {
+  return apiFetch(token, `/plans/${planId}/vote-visibility`, { method: "PATCH", body: { vote_visibility, expected_version } });
+}
+export function createComment(token: string, planId: string, activityId: string, body: string, client_operation_id: string) { return apiFetch(token, `/plans/${planId}/activities/${activityId}/comments`, { method: "POST", body: { body, client_operation_id } }); }
+export function patchComment(token: string, planId: string, activityId: string, commentId: string, body: string, expected_version: number) { return apiFetch(token, `/plans/${planId}/activities/${activityId}/comments/${commentId}`, { method: "PATCH", body: { body, expected_version } }); }
+export function deleteComment(token: string, planId: string, activityId: string, commentId: string): Promise<void> { return apiFetch(token, `/plans/${planId}/activities/${activityId}/comments/${commentId}`, { method: "DELETE" }); }
+export function createActivitySuggestion(token: string, planId: string, activityId: string, input: { suggestion_type: string; proposed_changes_json: Record<string, unknown>; message?: string; client_operation_id: string }) { return apiFetch(token, `/plans/${planId}/activities/${activityId}/suggestions`, { method: "POST", body: input }); }
+export function decideActivitySuggestion(token: string, planId: string, activityId: string, suggestionId: string, decision: "accept" | "dismiss", expected_activity_version: number, client_operation_id: string) { return apiFetch(token, `/plans/${planId}/activities/${activityId}/suggestions/${suggestionId}/${decision}`, { method: "POST", body: { expected_activity_version, client_operation_id } }); }
+export function upsertDateAvailability(token: string, planId: string, date: string, status: "available" | "maybe" | "unavailable") { return apiFetch(token, `/plans/${planId}/date-availability`, { method: "PUT", body: { date, status } }); }
+export function createDateSuggestion(token: string, planId: string, starts_on: string, ends_on: string, client_operation_id: string, message?: string) { return apiFetch(token, `/plans/${planId}/date-suggestions`, { method: "POST", body: { starts_on, ends_on, message, client_operation_id } }); }
+export function decideDateSuggestion(token: string, planId: string, suggestionId: string, decision: "accept" | "dismiss", expected_plan_version: number, client_operation_id: string) { return apiFetch(token, `/plans/${planId}/date-suggestions/${suggestionId}/${decision}`, { method: "POST", body: { expected_plan_version, client_operation_id } }); }
 
 export function createActivity(
   token: string,

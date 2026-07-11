@@ -31,6 +31,7 @@ describe("planWebSocketUrl", () => {
 describe("snapshotToPlanDetail", () => {
   it("fully derives local plan state from the resync snapshot", () => {
     const snapshot: ResyncSnapshot = {
+      current_user_id: "user-1",
       plan: {
         id: "plan-1",
         title: "Server title",
@@ -39,7 +40,8 @@ describe("snapshotToPlanDetail", () => {
         role: "owner",
         version: 7,
         planning_version: 1,
-        status: "draft"
+        status: "draft",
+        vote_visibility: "public"
       },
       members: [],
       activities: [
@@ -69,6 +71,10 @@ describe("snapshotToPlanDetail", () => {
       expense_splits: [],
       ledger_entries: [],
       latest_plan_events: [],
+      activity_comments: [],
+      activity_suggestions: [],
+      date_availability: [],
+      date_suggestions: [],
       server_version: 7
     };
 

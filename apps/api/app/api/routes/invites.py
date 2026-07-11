@@ -5,7 +5,7 @@ import secrets
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +28,20 @@ class InviteResponse(BaseModel):
 class JoinResponse(BaseModel):
     plan_id: UUID
     role: str
+
+
+class JoinRequest(BaseModel):
+    display_name: str | None = Field(default=None, max_length=50)
+
+    @field_validator("display_name")
+    @classmethod
+    def normalize_display_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("display_name must not be blank")
+        return normalized
 
 
 def hash_invite_token(token: str) -> str:
@@ -73,6 +87,7 @@ async def create_invite(
 @router.post("/invites/{token}/join", response_model=JoinResponse)
 async def join_invite(
     token: str,
+    payload: JoinRequest = JoinRequest(),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> JoinResponse:
@@ -92,6 +107,8 @@ async def join_invite(
     )
     membership = result.scalar_one_or_none()
     if membership is None:
+        if payload.display_name is not None:
+            user.display_name = payload.display_name
         membership = PlanMember(plan_id=invite.plan_id, user_id=user.id, role="member")
         session.add(membership)
         await session.flush()
@@ -104,6 +121,9 @@ async def join_invite(
             resource_id=membership.id,
             resource_version_after=None,
         )
+        await session.commit()
+    elif payload.display_name is not None:
+        user.display_name = payload.display_name
         await session.commit()
 
     return JoinResponse(plan_id=invite.plan_id, role=membership.role)

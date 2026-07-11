@@ -5,13 +5,14 @@ export type PlanSummary = {
   title: string;
   description: string | null;
   budget_cents: number | null;
-  role: "owner" | "member";
+  role: "owner" | "co_owner" | "member";
   version: number;
   planning_version: number;
   status: "draft" | "finalized";
   starts_on?: string | null;
   ends_on?: string | null;
   max_drive_minutes?: number | null;
+  vote_visibility: "public" | "anonymous";
 };
 
 export type ActivitySummary = {
@@ -95,11 +96,15 @@ export type PlanMember = {
   id: string;
   plan_id: string;
   user_id: string;
-  role: "owner" | "member";
-  email: string;
+  role: "owner" | "co_owner" | "member";
+  email?: string;
   display_name: string;
   created_at: string;
 };
+export type ActivityComment = { id: string; activity_id: string; author_id: string; author_display_name: string; body: string; version: number; deleted_at: string | null; created_at: string; updated_at: string };
+export type ActivitySuggestion = { id: string; activity_id: string; author_id: string; author_display_name: string; suggestion_type: string; proposed_changes_json: Record<string, unknown>; message: string | null; status: "open" | "accepted" | "dismissed"; created_at: string };
+export type DateAvailability = { date: string; status: "available" | "maybe" | "unavailable"; is_current_user: boolean };
+export type DateSuggestion = { id: string; starts_on: string; ends_on: string; message: string | null; status: "open" | "accepted" | "dismissed"; author_id: string; author_display_name: string };
 export type PlanEvent = {
   id: string;
   plan_id: string;
@@ -113,6 +118,7 @@ export type PlanEvent = {
   created_at: string;
 };
 export type ResyncSnapshot = {
+  current_user_id: string;
   plan: PlanSummary;
   members: PlanMember[];
   activities: ActivitySummary[];
@@ -123,6 +129,10 @@ export type ResyncSnapshot = {
   expense_splits: ExpenseSplit[];
   ledger_entries: LedgerEntry[];
   latest_plan_events: PlanEvent[];
+  activity_comments: ActivityComment[];
+  activity_suggestions: ActivitySuggestion[];
+  date_availability: DateAvailability[];
+  date_suggestions: DateSuggestion[];
   server_version: number;
 };
 

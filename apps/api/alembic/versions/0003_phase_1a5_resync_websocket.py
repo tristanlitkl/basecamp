@@ -29,7 +29,12 @@ def upgrade() -> None:
         sa.Column("resource_id", sa.Uuid(), nullable=True),
         sa.Column("resource_version_after", sa.Integer(), nullable=True),
         sa.Column("client_operation_id", sa.String(length=120), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["actor_id"], ["users.id"]),
         sa.ForeignKeyConstraint(["plan_id"], ["plans.id"]),
         sa.PrimaryKeyConstraint("id"),

@@ -3,7 +3,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +18,18 @@ class UserResponse(BaseModel):
     id: UUID
     email: str
     display_name: str
+
+
+class UserPatch(BaseModel):
+    display_name: str = Field(min_length=1, max_length=50)
+
+    @field_validator("display_name")
+    @classmethod
+    def normalize_display_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized or len(normalized) > 50:
+            raise ValueError("display_name must be 1–50 visible characters")
+        return normalized
 
 
 def serialize_user(user: User) -> UserResponse:
@@ -43,7 +55,6 @@ async def sync_user(
     else:
         user.auth_subject = claims.subject
         user.email = claims.email
-        user.display_name = display_name
 
     await session.commit()
     await session.refresh(user)
@@ -52,4 +63,16 @@ async def sync_user(
 
 @router.get("/auth/me", response_model=UserResponse)
 async def me(user: User = Depends(get_current_user)) -> UserResponse:
+    return serialize_user(user)
+
+
+@router.patch("/auth/me", response_model=UserResponse)
+async def update_me(
+    payload: UserPatch,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> UserResponse:
+    user.display_name = payload.display_name
+    await session.commit()
+    await session.refresh(user)
     return serialize_user(user)

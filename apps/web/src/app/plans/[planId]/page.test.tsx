@@ -5,21 +5,29 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import PlanPage from "@/app/plans/[planId]/page";
 import {
   ApiError,
+  changeMemberRole,
+  createActivitySuggestion,
+  createComment,
+  createDateSuggestion,
   createExpense,
   createInvite,
   createItineraryItem,
   deleteActivity,
   deleteExpense,
   deleteItineraryItem,
+  decideActivitySuggestion,
+  decideDateSuggestion,
   getPlanBalances,
   patchActivity,
   patchExpense,
   patchItineraryItem,
   patchPlan,
   reorderItineraryItem,
+  removeMember,
   resyncPlan,
   setPlanLifecycle,
   syncUser
+  ,upsertDateAvailability
 } from "@/lib/api-client";
 import { usePlanSocket } from "@/hooks/usePlanSocket";
 import type { ResyncSnapshot } from "@/types/api";
@@ -39,12 +47,14 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
     createItineraryItem: vi.fn(), patchItineraryItem: vi.fn(), reorderItineraryItem: vi.fn(), deleteItineraryItem: vi.fn(),
     createExpense: vi.fn(), patchExpense: vi.fn(), deleteExpense: vi.fn(),
     patchPlan: vi.fn(), setPlanLifecycle: vi.fn(), createInvite: vi.fn()
+    ,changeMemberRole: vi.fn(), removeMember: vi.fn(), createComment: vi.fn(), createActivitySuggestion: vi.fn(), decideActivitySuggestion: vi.fn(), upsertDateAvailability: vi.fn(), createDateSuggestion: vi.fn(), decideDateSuggestion: vi.fn()
   };
 });
 
-function snapshot(role: "owner" | "member" = "owner", status: "draft" | "finalized" = "draft"): ResyncSnapshot {
+function snapshot(role: "owner" | "co_owner" | "member" = "owner", status: "draft" | "finalized" = "draft"): ResyncSnapshot {
   return {
-    plan: { id: "plan-1", title: "Beach day", description: null, budget_cents: 5000, role, version: 4, planning_version: 8, status, starts_on: "2026-08-01T00:00:00Z", ends_on: null, max_drive_minutes: 45 },
+    current_user_id: "user-1",
+    plan: { id: "plan-1", title: "Beach day", description: null, budget_cents: 5000, role, version: 4, planning_version: 8, status, starts_on: "2026-08-01T00:00:00Z", ends_on: null, max_drive_minutes: 45, vote_visibility: "public" },
     members: [
       { id: "pm-1", plan_id: "plan-1", user_id: "user-1", role: "owner", email: "owner@example.com", display_name: "Owner", created_at: "2026-01-01" },
       { id: "pm-2", plan_id: "plan-1", user_id: "user-2", role: "member", email: "member@example.com", display_name: "Member", created_at: "2026-01-01" }
@@ -57,7 +67,7 @@ function snapshot(role: "owner" | "member" = "owner", status: "draft" | "finaliz
     ],
     expenses: [{ id: "expense-1", plan_id: "plan-1", paid_by_user_id: "user-1", description: "Lunch", amount_cents: 1001, status: "active", version: 6 }],
     expense_splits: [{ id: "split-1", expense_id: "expense-1", user_id: "user-1", amount_cents: 501, status: "active" }, { id: "split-2", expense_id: "expense-1", user_id: "user-2", amount_cents: 500, status: "active" }],
-    ledger_entries: [], latest_plan_events: [], server_version: 4
+    ledger_entries: [], latest_plan_events: [], activity_comments: [], activity_suggestions: [], date_availability: [], date_suggestions: [], server_version: 4
   };
 }
 
@@ -193,5 +203,62 @@ describe("Phase 1B.5 planning UI", () => {
     act(() => authorizationCallbacks.onAuthorizationFailure?.());
     expect(screen.getByText("You do not have access to this plan.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("Phase 1B.75 member directory enforces owner co-owner and member controls", async () => {
+    const owner = snapshot();
+    owner.members.push({ id: "pm-3", plan_id: "plan-1", user_id: "user-3", role: "co_owner", display_name: "Co Owner", created_at: "2026-02-03" });
+    await renderPlan(owner);
+    expect(screen.getAllByText("Co Owner")[0].closest("article")?.textContent).toContain("co_owner · joined 2026-02-03");
+    expect(screen.getAllByRole("button", { name: "Demote" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Remove" })).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Promote" }));
+    await waitFor(() => expect(changeMemberRole).toHaveBeenCalledWith("app-jwt", "plan-1", "user-2", "co_owner", "operation-id"));
+    expect(resyncPlan).toHaveBeenCalledTimes(2);
+
+    cleanup();
+    const coOwner = snapshot("co_owner"); coOwner.current_user_id = "user-3"; coOwner.members.push({ id: "pm-3", plan_id: "plan-1", user_id: "user-3", role: "co_owner", display_name: "Co Owner", created_at: "2026-02-03" });
+    await renderPlan(coOwner);
+    expect(screen.queryByRole("button", { name: "Promote" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Remove" })).toHaveLength(1);
+
+    cleanup(); await renderPlan(snapshot("member"));
+    expect(screen.queryByRole("button", { name: "Promote" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
+  });
+
+  it("Phase 1B.75 public and anonymous votes render privacy-safe identities and totals", async () => {
+    const publicSnapshot = snapshot();
+    publicSnapshot.votes = [{ activity_id: "activity-1", user_id: "user-2", vote: "yes" }];
+    publicSnapshot.activities[0].yes_votes = 1;
+    await renderPlan(publicSnapshot);
+    expect(screen.getByText("Votes: Member (yes)")).toBeTruthy();
+    cleanup();
+    const anonymous = snapshot("member"); anonymous.plan.vote_visibility = "anonymous"; anonymous.activities[0].vote = "yes"; anonymous.activity_scores["activity-1"].yes = 2; anonymous.votes = [{ activity_id: "activity-1", user_id: "user-1", vote: "yes" }];
+    await renderPlan(anonymous);
+    expect(screen.getByRole("heading", { name: "Kayaking" }).closest("article")?.textContent).toContain("Yes 2");
+    expect(screen.getByText(/Votes are anonymous/)).toBeTruthy();
+    expect(screen.queryByText(/Member \(yes\)/)).toBeNull();
+    expect(screen.getByRole("button", { name: "yes selected" })).toBeTruthy();
+  });
+
+  it("Phase 1B.75 comments suggestions and date coordination use operation IDs and resync", async () => {
+    const next = snapshot();
+    next.activity_comments = [{ id: "comment-1", activity_id: "activity-1", author_id: "user-2", author_display_name: "Member", body: "Great idea", version: 1, deleted_at: null, created_at: "2026-01-01", updated_at: "2026-01-01" }];
+    next.activity_suggestions = [{ id: "suggestion-1", activity_id: "activity-1", author_id: "user-2", author_display_name: "Member", suggestion_type: "notes", proposed_changes_json: { notes: "New" }, message: "Change notes", status: "open", created_at: "2026-01-01" }];
+    next.date_suggestions = [{ id: "date-1", starts_on: "2026-07-18", ends_on: "2026-07-21", message: null, status: "open", author_id: "user-2", author_display_name: "Tris" }];
+    await renderPlan(next);
+    fireEvent.click(screen.getByText(/Discussion/));
+    expect(screen.getByText("Member: Great idea")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Comment"), { target: { value: "Another" } }); fireEvent.click(screen.getByRole("button", { name: "Post comment" }));
+    await waitFor(() => expect(createComment).toHaveBeenCalledWith("app-jwt", "plan-1", "activity-1", "Another", "operation-id"));
+    fireEvent.click(screen.getAllByRole("button", { name: "Accept" })[0]);
+    await waitFor(() => expect(decideActivitySuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", "activity-1", "suggestion-1", "accept", 3, "operation-id"));
+    fireEvent.change(screen.getByLabelText("Date"), { target: { value: "2026-07-18" } }); fireEvent.click(screen.getByRole("button", { name: "Save availability" }));
+    await waitFor(() => expect(upsertDateAvailability).toHaveBeenCalled());
+    expect(screen.getByText(/Tris suggested 2026-07-18–2026-07-21/)).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "Dismiss" }).at(-1)!);
+    await waitFor(() => expect(decideDateSuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", "date-1", "dismiss", 4, "operation-id"));
+    expect(vi.mocked(resyncPlan).mock.calls.length).toBeGreaterThan(1);
   });
 });
