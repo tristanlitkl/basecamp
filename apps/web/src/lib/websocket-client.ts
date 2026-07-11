@@ -13,7 +13,8 @@ export type ConnectionState =
   | "syncing"
   | "restored"
   | "unavailable"
-  | "auth_failed";
+  | "auth_failed"
+  | "authorization_failed";
 
 export function calculateReconnectDelay(
   attempt: number,
@@ -29,6 +30,10 @@ export function planWebSocketUrl(planId: string, token: string): string {
   return url.toString();
 }
 
-export function isAuthFailureClose(event: CloseEvent): boolean {
-  return event.code === 1008;
+export function isAuthenticationFailureClose(event: CloseEvent): boolean {
+  return event.code === 1008 && event.reason !== "plan_membership_required";
+}
+
+export function isAuthorizationFailureClose(event: CloseEvent): boolean {
+  return event.code === 1008 && event.reason === "plan_membership_required";
 }

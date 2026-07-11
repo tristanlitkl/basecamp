@@ -13,8 +13,10 @@ export function connectionLabel(state: ConnectionState): string {
     case "restored":
       return "Connection restored";
     case "unavailable":
-      return "Connection unavailable - retry";
+      return "Connection unavailable — retry";
     case "auth_failed":
-      return "Session expired - sign in again";
+      return "Authentication required — sign in again";
+    case "authorization_failed":
+      return "You are not authorized to access this plan";
   }
 }

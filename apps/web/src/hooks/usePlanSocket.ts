@@ -8,7 +8,8 @@ import {
   COLD_START_NOTICE_MS,
   ConnectionState,
   INITIAL_HANDSHAKE_TIMEOUT_MS,
-  isAuthFailureClose,
+  isAuthenticationFailureClose,
+  isAuthorizationFailureClose,
   MAX_AUTO_RECONNECT_ATTEMPTS,
   planWebSocketUrl
 } from "@/lib/websocket-client";
@@ -19,134 +20,173 @@ type UsePlanSocketOptions = {
   token?: string;
   onSnapshot: (snapshot: ResyncSnapshot) => void;
   onAuthFailure: () => void;
+  onAuthorizationFailure?: () => void;
 };
 
-export function usePlanSocket({ planId, token, onSnapshot, onAuthFailure }: UsePlanSocketOptions) {
+export function usePlanSocket({
+  planId,
+  token,
+  onSnapshot,
+  onAuthFailure,
+  onAuthorizationFailure
+}: UsePlanSocketOptions) {
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   const [nextRetryMs, setNextRetryMs] = useState<number | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
-  const attemptRef = useRef(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handshakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const stoppedRef = useRef(false);
+  const attemptRef = useRef(0);
+  const disposedRef = useRef(false);
+  const generationRef = useRef(0);
+  const callbacksRef = useRef({ onSnapshot, onAuthFailure, onAuthorizationFailure });
+  callbacksRef.current = { onSnapshot, onAuthFailure, onAuthorizationFailure };
 
   const clearTimers = useCallback(() => {
     for (const timer of [retryTimerRef, wakeTimerRef, handshakeTimerRef]) {
-      if (timer.current) {
+      if (timer.current !== null) {
         clearTimeout(timer.current);
         timer.current = null;
       }
     }
   }, []);
 
-  const closeSocket = useCallback(() => {
-    socketRef.current?.close();
-    socketRef.current = null;
-  }, []);
+  const connectRef = useRef<(manual?: boolean) => void>(() => undefined);
+  connectRef.current = (manual = false) => {
+    if (disposedRef.current) return;
+    clearTimers();
 
-  const connect = useCallback(
-    (manual = false) => {
-      if (!token) {
+    if (!token) {
+      setConnectionState("auth_failed");
+      callbacksRef.current.onAuthFailure();
+      return;
+    }
+
+    if (manual) attemptRef.current = 0;
+    const generation = ++generationRef.current;
+    const previousSocket = socketRef.current;
+    socketRef.current = null;
+    if (previousSocket) {
+      previousSocket.onclose = null;
+      previousSocket.onerror = null;
+      previousSocket.close();
+    }
+
+    const isCurrent = () => !disposedRef.current && generation === generationRef.current;
+    setNextRetryMs(null);
+    setConnectionState(attemptRef.current === 0 ? "connecting" : "reconnecting");
+
+    wakeTimerRef.current = setTimeout(() => {
+      wakeTimerRef.current = null;
+      if (isCurrent() && attemptRef.current === 0) setConnectionState("waking");
+    }, COLD_START_NOTICE_MS);
+
+    const socket = new WebSocket(planWebSocketUrl(planId, token));
+    socketRef.current = socket;
+
+    handshakeTimerRef.current = setTimeout(() => {
+      handshakeTimerRef.current = null;
+      if (isCurrent()) socket.close(4000, "initial_connection_timeout");
+    }, INITIAL_HANDSHAKE_TIMEOUT_MS);
+
+    socket.onmessage = async (event) => {
+      if (!isCurrent()) return;
+      let message: { type?: string };
+      try {
+        message = JSON.parse(String(event.data)) as { type?: string };
+      } catch {
+        return;
+      }
+      if (message.type !== "connected") return;
+
+      clearTimers();
+      setConnectionState("syncing");
+      try {
+        const snapshot = await resyncPlan(token, planId);
+        if (!isCurrent()) return;
+        callbacksRef.current.onSnapshot(snapshot);
+        attemptRef.current = 0;
+        setConnectionState("restored");
+      } catch (error) {
+        if (!isCurrent()) return;
+        const message = error instanceof Error ? error.message : "";
+        if (message.startsWith("401 ")) {
+          ++generationRef.current;
+          socketRef.current = null;
+          socket.onclose = null;
+          socket.close();
+          setConnectionState("auth_failed");
+          callbacksRef.current.onAuthFailure();
+          return;
+        }
+        if (message.startsWith("403 ")) {
+          ++generationRef.current;
+          socketRef.current = null;
+          socket.onclose = null;
+          socket.close();
+          setConnectionState("authorization_failed");
+          callbacksRef.current.onAuthorizationFailure?.();
+          return;
+        }
+        socket.close(4001, "resync_failed");
+      }
+    };
+
+    socket.onclose = (event) => {
+      if (!isCurrent()) return;
+      socketRef.current = null;
+      clearTimers();
+
+      if (isAuthenticationFailureClose(event)) {
+        ++generationRef.current;
         setConnectionState("auth_failed");
-        onAuthFailure();
+        callbacksRef.current.onAuthFailure();
+        return;
+      }
+      if (isAuthorizationFailureClose(event)) {
+        ++generationRef.current;
+        setConnectionState("authorization_failed");
+        callbacksRef.current.onAuthorizationFailure?.();
+        return;
+      }
+      if (attemptRef.current >= MAX_AUTO_RECONNECT_ATTEMPTS) {
+        setConnectionState("unavailable");
+        setNextRetryMs(null);
         return;
       }
 
-      stoppedRef.current = false;
-      clearTimers();
-      closeSocket();
-      if (manual) {
-        attemptRef.current = 0;
-      }
+      const delay = calculateReconnectDelay(attemptRef.current);
+      attemptRef.current += 1;
+      setConnectionState("reconnecting");
+      setNextRetryMs(delay);
+      retryTimerRef.current = setTimeout(() => {
+        retryTimerRef.current = null;
+        if (isCurrent()) connectRef.current(false);
+      }, delay);
+    };
 
-      const attempt = attemptRef.current;
-      setNextRetryMs(null);
-      setConnectionState(attempt === 0 ? "connecting" : "reconnecting");
-
-      wakeTimerRef.current = setTimeout(() => {
-        if (attempt === 0) {
-          setConnectionState("waking");
-        }
-      }, COLD_START_NOTICE_MS);
-
-      const socket = new WebSocket(planWebSocketUrl(planId, token));
-      socketRef.current = socket;
-
-      handshakeTimerRef.current = setTimeout(() => {
-        socket.close(4000, "initial_connection_timeout");
-      }, INITIAL_HANDSHAKE_TIMEOUT_MS);
-
-      socket.onmessage = async (event) => {
-        const message = JSON.parse(event.data) as { type?: string };
-        if (message.type !== "connected") {
-          return;
-        }
-
-        clearTimers();
-        setConnectionState("syncing");
-        try {
-          const snapshot = await resyncPlan(token, planId);
-          onSnapshot(snapshot);
-          attemptRef.current = 0;
-          setConnectionState("restored");
-        } catch (error) {
-          if (error instanceof Error && error.message.includes("401")) {
-            stoppedRef.current = true;
-            setConnectionState("auth_failed");
-            onAuthFailure();
-            socket.close();
-            return;
-          }
-          socket.close(4001, "resync_failed");
-        }
-      };
-
-      socket.onclose = (event) => {
-        clearTimers();
-        if (stoppedRef.current) {
-          return;
-        }
-
-        if (isAuthFailureClose(event)) {
-          stoppedRef.current = true;
-          setConnectionState("auth_failed");
-          onAuthFailure();
-          return;
-        }
-
-        if (attemptRef.current >= MAX_AUTO_RECONNECT_ATTEMPTS) {
-          setConnectionState("unavailable");
-          setNextRetryMs(null);
-          return;
-        }
-
-        const delay = calculateReconnectDelay(attemptRef.current);
-        attemptRef.current += 1;
-        setConnectionState("reconnecting");
-        setNextRetryMs(delay);
-        retryTimerRef.current = setTimeout(() => connect(false), delay);
-      };
-
-      socket.onerror = () => {
-        socket.close();
-      };
-    },
-    [clearTimers, closeSocket, onAuthFailure, onSnapshot, planId, token]
-  );
+    // Browsers report failed handshakes through error and then close. Only close
+    // owns retry scheduling, preventing error+close from creating two timers.
+    socket.onerror = () => undefined;
+  };
 
   useEffect(() => {
-    connect(false);
+    disposedRef.current = false;
+    connectRef.current(false);
     return () => {
-      stoppedRef.current = true;
+      disposedRef.current = true;
+      ++generationRef.current;
       clearTimers();
-      closeSocket();
+      const socket = socketRef.current;
+      socketRef.current = null;
+      if (socket) {
+        socket.onclose = null;
+        socket.onerror = null;
+        socket.close();
+      }
     };
-  }, [connect, clearTimers, closeSocket]);
+  }, [clearTimers, planId, token]);
 
-  return {
-    connectionState,
-    nextRetryMs,
-    retry: () => connect(true)
-  };
+  const retry = useCallback(() => connectRef.current(true), []);
+  return { connectionState, nextRetryMs, retry };
 }
