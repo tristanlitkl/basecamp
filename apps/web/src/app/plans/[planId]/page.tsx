@@ -1,6 +1,6 @@
 "use client";
 
-import { signIn, useSession } from "next-auth/react";
+import { signIn, signOut, useSession } from "next-auth/react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import React from "react";
@@ -246,6 +246,10 @@ export default function PlanPage() {
   };
 
   return <main className="app-shell">
+    <header className="topbar app-header">
+      <div className="header-context"><Link className="brand" href="/dashboard"><span className="brand-mark">B</span> Basecamp</Link><span className="header-divider" /><span className="muted small">Plan workspace</span></div>
+      <div className="user-area"><span className="avatar avatar-small" aria-hidden="true">{initials(displayMember(snapshot, snapshot.current_user_id))}</span><span className="user-copy"><strong>{displayMember(snapshot, snapshot.current_user_id)}</strong><span>{plan.role.replace("_", "-")}</span></span><button className="btn btn-quiet" type="button" onClick={() => signOut()}>Sign out</button></div>
+    </header>
     <header className="plan-header">
       <Link className="breadcrumb" href="/dashboard">← Back to dashboard</Link>
       <div className="plan-title-row">
