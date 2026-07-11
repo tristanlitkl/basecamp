@@ -49,58 +49,59 @@ export default function DashboardPage() {
     }
   }
 
-  if (status === "loading") {
-    return <main style={{ padding: 24 }}>Loading...</main>;
-  }
+  if (status === "loading") return <main className="auth-shell"><p className="muted">Loading your Basecamp…</p></main>;
 
   if (status !== "authenticated") {
     return (
-      <main style={{ maxWidth: 720, margin: "64px auto", padding: 24, fontFamily: "system-ui" }}>
-        <h1>Dashboard</h1>
-        <button type="button" onClick={() => signIn("google")}>
+      <main className="auth-shell">
+        <section className="card card-pad auth-card stack">
+          <div className="brand"><span className="brand-mark">B</span> Basecamp</div>
+          <div><p className="eyebrow">Plan together</p><h1>Your next great day starts here.</h1><p className="muted">Sign in to coordinate activities, dates, and shared expenses with your group.</p></div>
+        <button className="btn" type="button" onClick={() => signIn("google")}>
           Sign in with Google
         </button>
+        </section>
       </main>
     );
   }
 
   return (
-    <main style={{ maxWidth: 920, margin: "40px auto", padding: 24, fontFamily: "system-ui" }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <h1>Dashboard</h1>
-          <p>{session.user?.email}</p>
-        </div>
-        <button type="button" onClick={() => signOut()}>
-          Sign out
-        </button>
+    <main className="app-shell">
+      <header className="topbar">
+        <div className="brand"><span className="brand-mark">B</span> Basecamp</div>
+        <button className="btn btn-secondary" type="button" onClick={() => signOut()}>Sign out</button>
       </header>
+      <section className="split" style={{ marginBottom: 24 }}>
+        <div>
+          <p className="eyebrow">Your plans</p>
+          <h1>Welcome{displayName ? `, ${displayName}` : ""}.</h1>
+          <p className="muted">Bring the group together and turn ideas into an actual plan.</p>
+        </div>
+        <form onSubmit={submit} className="cluster">
+          <label className="field"><span className="muted">New plan title</span><input aria-label="Plan title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Friday dinner" /></label>
+          <button className="btn" type="submit">Create plan</button>
+        </form>
+      </section>
 
-      <form onSubmit={submit} style={{ display: "flex", gap: 8, margin: "24px 0" }}>
-        <input
-          aria-label="Plan title"
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-          placeholder="Friday dinner"
-          style={{ flex: 1, padding: 10 }}
-        />
-        <button type="submit">Create plan</button>
-      </form>
+      <section className="card section-card">
+        <div className="section-heading"><div><h2>Profile</h2><p className="muted small">This name is shown to people you plan with.</p></div><span className="badge">{session.user?.email}</span></div>
+        <form onSubmit={async (event) => { event.preventDefault(); if (!session?.appJwt) return; try { const user = await updateDisplayName(session.appJwt, displayName); setDisplayName(user.display_name); } catch { setError("Unable to save your Basecamp name."); } }} className="cluster">
+          <label className="field" style={{ flex: 1 }}>Your name in Basecamp <input value={displayName} maxLength={50} onChange={(event) => setDisplayName(event.target.value)} /></label>
+          <button className="btn btn-secondary" type="submit">Save name</button>
+        </form>
+      </section>
 
-      <form onSubmit={async (event) => { event.preventDefault(); if (!session?.appJwt) return; try { const user = await updateDisplayName(session.appJwt, displayName); setDisplayName(user.display_name); } catch { setError("Unable to save your Basecamp name."); } }} style={{ display: "flex", gap: 8, margin: "16px 0" }}>
-        <label>Your name in Basecamp <input value={displayName} maxLength={50} onChange={(event) => setDisplayName(event.target.value)} /></label>
-        <button type="submit">Save name</button>
-      </form>
+      {error && <p className="alert" role="alert">{error}</p>}
 
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
-
-      <section style={{ display: "grid", gap: 12 }}>
+      <section className="dashboard-grid" aria-label="Your plans">
         {plans.map((plan) => (
-          <Link key={plan.id} href={`/plans/${plan.id}`} style={{ border: "1px solid #ddd", padding: 16 }}>
-            <strong>{plan.title}</strong>
-            <span style={{ marginLeft: 12 }}>{plan.role}</span>
+          <Link className="card plan-card" key={plan.id} href={`/plans/${plan.id}`}>
+            <div className="split"><strong>{plan.title}</strong><span className={`badge badge-${plan.role}`}>{plan.role.replace("_", "-")}</span></div>
+            <span className="muted small">Open the shared workspace for activities, dates, and expenses.</span>
+            <span className="cluster" style={{ color: "var(--brand)", fontWeight: 750 }}>Open plan <span aria-hidden="true">→</span></span>
           </Link>
         ))}
+        {plans.length === 0 && <div className="empty" style={{ gridColumn: "1 / -1" }}><strong>No plans yet</strong><p>Create your first plan above and invite your group.</p></div>}
       </section>
     </main>
   );

@@ -93,10 +93,11 @@ describe("Phase 1B.5 planning UI", () => {
     await renderPlan();
     expect(syncUser).toHaveBeenCalledWith("app-jwt");
     expect(resyncPlan).toHaveBeenCalledWith("app-jwt", "plan-1");
-    expect(screen.getByText(/Role: owner/)).toBeTruthy();
+    expect(screen.getAllByText("owner").length).toBeGreaterThan(0);
     expect(screen.getByText(/Connection restored/)).toBeTruthy();
-    expect(screen.getByText("Owner: $5.00")).toBeTruthy();
-    expect(screen.getByText("Member: -$5.00")).toBeTruthy();
+    const balances = screen.getByRole("heading", { name: "Balances" }).closest("section")!;
+    expect(balances.textContent).toContain("Owner$5.00");
+    expect(balances.textContent).toContain("Member-$5.00");
     fireEvent.click(screen.getByRole("button", { name: "Create invite" }));
     await waitFor(() => expect(createInvite).toHaveBeenCalledWith("app-jwt", "plan-1"));
     await waitFor(() => expect(resyncPlan).toHaveBeenCalledTimes(2));
@@ -112,9 +113,9 @@ describe("Phase 1B.5 planning UI", () => {
     cleanup();
     vi.clearAllMocks();
     await renderPlan(snapshot("owner", "finalized"));
-    expect(screen.getByText("This plan is finalized. Unfinalize it to make changes.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Add activity" }).hasAttribute("disabled")).toBe(true);
-    expect(screen.getByRole("button", { name: "Add expense" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText(/This plan is finalized/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "+ Add activity" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "+ Add expense" }).hasAttribute("disabled")).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Unfinalize plan" }));
     await waitFor(() => expect(setPlanLifecycle).toHaveBeenCalledWith("app-jwt", "plan-1", "unfinalize", 4));
   });
@@ -128,6 +129,7 @@ describe("Phase 1B.5 planning UI", () => {
 
   it("saves integer-cent constraints and activity edits with current versions", async () => {
     await renderPlan();
+    fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
     fireEvent.change(screen.getByLabelText("Budget"), { target: { value: "10.05" } });
     fireEvent.click(screen.getByRole("button", { name: "Save constraints" }));
     await waitFor(() => expect(patchPlan).toHaveBeenCalledWith("app-jwt", "plan-1", expect.objectContaining({ expected_version: 4, budget_cents: 1005, max_drive_minutes: 45 })));
@@ -168,10 +170,11 @@ describe("Phase 1B.5 planning UI", () => {
 
   it("creates, edits, and deletes expenses with cents, participants, versions, and idempotency", async () => {
     await renderPlan();
-    const createForm = screen.getByRole("button", { name: "Add expense" }).closest("form")!;
+    fireEvent.click(screen.getByRole("button", { name: "+ Add expense" }));
+    const createForm = screen.getByRole("button", { name: "Save expense" }).closest("form")!;
     fireEvent.change(within(createForm).getByLabelText("Description"), { target: { value: "Dinner" } });
     fireEvent.change(within(createForm).getByLabelText("Amount"), { target: { value: "10.05" } });
-    fireEvent.click(within(createForm).getByRole("button", { name: "Add expense" }));
+    fireEvent.click(within(createForm).getByRole("button", { name: "Save expense" }));
     await waitFor(() => expect(createExpense).toHaveBeenCalledWith("app-jwt", "plan-1", expect.objectContaining({ description: "Dinner", amount_cents: 1005, paid_by_user_id: "user-1", participant_user_ids: ["user-1", "user-2"], client_operation_id: "operation-id" })));
 
     const expense = screen.getByRole("heading", { name: /Lunch/ }).closest("article")!;
@@ -186,6 +189,7 @@ describe("Phase 1B.5 planning UI", () => {
   it("restores authoritative state and reports stale optimistic-concurrency conflicts", async () => {
     vi.mocked(patchPlan).mockRejectedValue(new ApiError(409, { detail: { error: "version_conflict" } }));
     await renderPlan();
+    fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
     fireEvent.click(screen.getByRole("button", { name: "Save constraints" }));
     expect(await screen.findByText("This plan changed since you loaded it. The latest state has been restored.")).toBeTruthy();
     expect(resyncPlan).toHaveBeenCalledTimes(2);
@@ -209,7 +213,7 @@ describe("Phase 1B.5 planning UI", () => {
     const owner = snapshot();
     owner.members.push({ id: "pm-3", plan_id: "plan-1", user_id: "user-3", role: "co_owner", display_name: "Co Owner", created_at: "2026-02-03" });
     await renderPlan(owner);
-    expect(screen.getAllByText("Co Owner")[0].closest("article")?.textContent).toContain("co_owner · joined 2026-02-03");
+    expect(screen.getAllByText("Co Owner")[0].closest("article")?.textContent).toContain("co-ownerJoined Feb 3, 2026");
     expect(screen.getAllByRole("button", { name: "Demote" })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "Remove" })).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "Promote" }));
@@ -249,14 +253,14 @@ describe("Phase 1B.5 planning UI", () => {
     next.date_suggestions = [{ id: "date-1", starts_on: "2026-07-18", ends_on: "2026-07-21", message: null, status: "open", author_id: "user-2", author_display_name: "Tris" }];
     await renderPlan(next);
     fireEvent.click(screen.getByText(/Discussion/));
-    expect(screen.getByText("Member: Great idea")).toBeTruthy();
+    expect(screen.getByText("Great idea")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Comment"), { target: { value: "Another" } }); fireEvent.click(screen.getByRole("button", { name: "Post comment" }));
     await waitFor(() => expect(createComment).toHaveBeenCalledWith("app-jwt", "plan-1", "activity-1", "Another", "operation-id"));
     fireEvent.click(screen.getAllByRole("button", { name: "Accept" })[0]);
     await waitFor(() => expect(decideActivitySuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", "activity-1", "suggestion-1", "accept", 3, "operation-id"));
     fireEvent.change(screen.getByLabelText("Date"), { target: { value: "2026-07-18" } }); fireEvent.click(screen.getByRole("button", { name: "Save availability" }));
     await waitFor(() => expect(upsertDateAvailability).toHaveBeenCalled());
-    expect(screen.getByText(/Tris suggested 2026-07-18–2026-07-21/)).toBeTruthy();
+    expect(screen.getByText(/suggested Jul 18, 2026–Jul 21, 2026/)).toBeTruthy();
     fireEvent.click(screen.getAllByRole("button", { name: "Dismiss" }).at(-1)!);
     await waitFor(() => expect(decideDateSuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", "date-1", "dismiss", 4, "operation-id"));
     expect(vi.mocked(resyncPlan).mock.calls.length).toBeGreaterThan(1);

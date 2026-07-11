@@ -12,6 +12,7 @@ export default function InvitePage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("");
+  const [joining, setJoining] = useState(false);
 
   useEffect(() => { if (session?.appJwt) void getMe(session.appJwt).then((user) => setDisplayName(user.display_name)); }, [session?.appJwt]);
 
@@ -19,6 +20,8 @@ export default function InvitePage() {
     if (!session?.appJwt) {
       return;
     }
+    setJoining(true);
+    setError(null);
     try {
       await syncUser(session.appJwt);
       await updateDisplayName(session.appJwt, displayName);
@@ -26,20 +29,25 @@ export default function InvitePage() {
       router.push(`/plans/${result.plan_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to join invite");
+    } finally {
+      setJoining(false);
     }
   }
 
   return (
-    <main style={{ maxWidth: 720, margin: "64px auto", padding: 24, fontFamily: "system-ui" }}>
-      <h1>Join Basecamp plan</h1>
+    <main className="auth-shell">
+      <section className="card card-pad auth-card stack">
+      <div className="brand"><span className="brand-mark">B</span> Basecamp</div>
+      <div><p className="eyebrow">You’re invited</p><h1>Join this Basecamp plan</h1><p className="muted">Coordinate the best activities, dates, and shared costs with the whole group.</p></div>
       {status === "authenticated" ? (
-        <><label>Your name in Basecamp <input value={displayName} maxLength={50} onChange={(event) => setDisplayName(event.target.value)} /></label><button type="button" onClick={join}>Join plan</button></>
+        <><label className="field">Your name in Basecamp <input value={displayName} maxLength={50} onChange={(event) => setDisplayName(event.target.value)} /></label><button className="btn" type="button" disabled={joining || !displayName.trim()} onClick={join}>{joining ? "Joining…" : "Join plan"}</button></>
       ) : (
-        <button type="button" onClick={() => signIn("google")}>
+        <button className="btn" type="button" onClick={() => signIn("google")}>
           Sign in with Google
         </button>
       )}
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {error && <p className="alert" role="alert">{error}</p>}
+      </section>
     </main>
   );
 }
