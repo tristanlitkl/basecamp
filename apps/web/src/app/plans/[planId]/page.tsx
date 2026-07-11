@@ -65,9 +65,7 @@ export default function PlanPage() {
     load().catch((err) => {
       setPlan(null);
       if (isPlanMembershipError(err)) {
-        setError(null);
-        setAuthFailed(false);
-        setAuthorizationFailed(true);
+        socket.denyAuthorization();
       } else if (isAuthenticationError(err)) {
         setAuthFailed(true);
       } else {

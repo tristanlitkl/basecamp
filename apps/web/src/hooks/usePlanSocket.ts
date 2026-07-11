@@ -53,6 +53,25 @@ export function usePlanSocket({
   }, []);
 
   const connectRef = useRef<(manual?: boolean) => void>(() => undefined);
+  const enterAuthorizationDeniedRef = useRef<() => void>(() => undefined);
+  enterAuthorizationDeniedRef.current = () => {
+    if (terminalRef.current) return;
+    terminalRef.current = true;
+    ++generationRef.current;
+    clearTimers();
+    const socket = socketRef.current;
+    socketRef.current = null;
+    if (socket) {
+      socket.onmessage = null;
+      socket.onclose = null;
+      socket.onerror = null;
+      socket.close();
+    }
+    setNextRetryMs(null);
+    setConnectionState("authorization_failed");
+    callbacksRef.current.onAuthorizationFailure?.();
+  };
+
   connectRef.current = (manual = false) => {
     if (disposedRef.current || terminalRef.current) return;
     clearTimers();
@@ -122,14 +141,7 @@ export function usePlanSocket({
           return;
         }
         if (isPlanMembershipError(error)) {
-          terminalRef.current = true;
-          clearTimers();
-          ++generationRef.current;
-          socketRef.current = null;
-          socket.onclose = null;
-          socket.close();
-          setConnectionState("authorization_failed");
-          callbacksRef.current.onAuthorizationFailure?.();
+          enterAuthorizationDeniedRef.current();
           return;
         }
         socket.close(4001, "resync_failed");
@@ -149,10 +161,7 @@ export function usePlanSocket({
         return;
       }
       if (isAuthorizationFailureClose(event)) {
-        terminalRef.current = true;
-        ++generationRef.current;
-        setConnectionState("authorization_failed");
-        callbacksRef.current.onAuthorizationFailure?.();
+        enterAuthorizationDeniedRef.current();
         return;
       }
       if (attemptRef.current >= MAX_AUTO_RECONNECT_ATTEMPTS) {
@@ -195,5 +204,6 @@ export function usePlanSocket({
   }, [clearTimers, planId, token]);
 
   const retry = useCallback(() => connectRef.current(true), []);
-  return { connectionState, nextRetryMs, retry };
+  const denyAuthorization = useCallback(() => enterAuthorizationDeniedRef.current(), []);
+  return { connectionState, nextRetryMs, retry, denyAuthorization };
 }

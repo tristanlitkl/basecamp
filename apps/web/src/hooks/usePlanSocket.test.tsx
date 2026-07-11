@@ -175,6 +175,40 @@ describe("usePlanSocket lifecycle", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("cancels a scheduled reconnect when an independent request denies membership", async () => {
+    const callbacks = options();
+    const { result, rerender } = renderHook(() => usePlanSocket(callbacks));
+    const staleClose = FakeWebSocket.instances[0].onclose;
+    act(() => FakeWebSocket.instances[0].fail());
+    expect(vi.getTimerCount()).toBe(1);
+
+    act(() => result.current.denyAuthorization());
+    expect(result.current.connectionState).toBe("authorization_failed");
+    expect(vi.getTimerCount()).toBe(0);
+    expect(callbacks.onAuthorizationFailure).toHaveBeenCalledOnce();
+
+    act(() => staleClose?.({ code: 1006, reason: "" } as CloseEvent));
+    act(() => result.current.retry());
+    rerender();
+    await act(async () => vi.advanceTimersByTime(120_000));
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+
+    act(() => result.current.denyAuthorization());
+    expect(callbacks.onAuthorizationFailure).toHaveBeenCalledOnce();
+  });
+
+  it("keeps independent membership denial terminal under StrictMode", async () => {
+    const { result, rerender } = renderHook(() => usePlanSocket(options()), { wrapper: StrictMode });
+    const createdBeforeDenial = FakeWebSocket.instances.length;
+    act(() => result.current.denyAuthorization());
+    rerender();
+    await act(async () => vi.advanceTimersByTime(120_000));
+    expect(FakeWebSocket.instances).toHaveLength(createdBeforeDenial);
+    expect(FakeWebSocket.instances.filter((socket) => !socket.closed)).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("leaves only one live socket and no duplicate timer under StrictMode", () => {
     renderHook(() => usePlanSocket(options()), { wrapper: StrictMode });
     expect(FakeWebSocket.instances.filter((socket) => !socket.closed)).toHaveLength(1);
