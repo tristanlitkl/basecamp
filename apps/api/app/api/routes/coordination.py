@@ -29,7 +29,7 @@ from app.models.plan import (
 )
 from app.models.user import User
 from app.services.planning_service import bump_planning_version, require_mutable_plan
-from app.services.idempotency_service import claim_operation, complete_operation
+from app.services.idempotency_service import claim_operation, complete_operation, fail_operation
 
 router = APIRouter(tags=["coordination"])
 
@@ -624,6 +624,46 @@ async def decide_date_suggestion(
     await complete_operation(
         session, claim, suggestion.id, body, response_status=status.HTTP_200_OK
     )
+    return body
+
+
+async def run_date_suggestion_decision(
+    plan_id: UUID,
+    suggestion_id: UUID,
+    decision: str,
+    payload: DateSuggestionDecision,
+    user: User,
+    session: AsyncSession,
+) -> dict[str, Any]:
+    """Persist terminal business failures so an idempotent retry is deterministic."""
+    claim = await claim_operation(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        client_operation_id=payload.client_operation_id,
+        payload={
+            "suggestion_id": suggestion_id,
+            "decision": decision,
+            "expected_plan_version": payload.expected_plan_version,
+        },
+        resource_type="date_suggestion_decision",
+    )
+    if isinstance(claim, dict):
+        return claim
+    try:
+        body = await decide_date_suggestion(
+            plan_id, suggestion_id, decision, payload, user, session, claim
+        )
+    except HTTPException as error:
+        await fail_operation(
+            session,
+            claim,
+            response_status=error.status_code,
+            response=error.detail if isinstance(error.detail, dict) else {"error": error.detail},
+            failure_type="permanent",
+        )
+        await session.commit()
+        raise
     await session.commit()
     return body
 
@@ -637,22 +677,8 @@ async def accept_date_suggestion(
     actor: PlanMember = Depends(require_plan_owner),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    claim = await claim_operation(
-        session,
-        plan_id=plan_id,
-        actor_id=user.id,
-        client_operation_id=payload.client_operation_id,
-        payload={
-            "suggestion_id": suggestion_id,
-            "decision": "accepted",
-            "expected_plan_version": payload.expected_plan_version,
-        },
-        resource_type="date_suggestion_decision",
-    )
-    if isinstance(claim, dict):
-        return claim
-    return await decide_date_suggestion(
-        plan_id, suggestion_id, "accepted", payload, user, session, claim
+    return await run_date_suggestion_decision(
+        plan_id, suggestion_id, "accepted", payload, user, session
     )
 
 
@@ -665,22 +691,8 @@ async def dismiss_date_suggestion(
     actor: PlanMember = Depends(require_plan_owner),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    claim = await claim_operation(
-        session,
-        plan_id=plan_id,
-        actor_id=user.id,
-        client_operation_id=payload.client_operation_id,
-        payload={
-            "suggestion_id": suggestion_id,
-            "decision": "dismissed",
-            "expected_plan_version": payload.expected_plan_version,
-        },
-        resource_type="date_suggestion_decision",
-    )
-    if isinstance(claim, dict):
-        return claim
-    return await decide_date_suggestion(
-        plan_id, suggestion_id, "dismissed", payload, user, session, claim
+    return await run_date_suggestion_decision(
+        plan_id, suggestion_id, "dismissed", payload, user, session
     )
 
 
@@ -824,7 +836,6 @@ async def decide_plan_suggestion(
     await complete_operation(
         session, claim, suggestion.id, body, response_status=status.HTTP_200_OK
     )
-    await session.commit()
     return body
 
 
@@ -850,9 +861,22 @@ async def plan_suggestion_decision_endpoint(
     )
     if isinstance(claim, dict):
         return claim
-    return await decide_plan_suggestion(
-        plan_id, suggestion_id, decision, payload, user, session, claim
-    )
+    try:
+        body = await decide_plan_suggestion(
+            plan_id, suggestion_id, decision, payload, user, session, claim
+        )
+    except HTTPException as error:
+        await fail_operation(
+            session,
+            claim,
+            response_status=error.status_code,
+            response=error.detail if isinstance(error.detail, dict) else {"error": error.detail},
+            failure_type="permanent",
+        )
+        await session.commit()
+        raise
+    await session.commit()
+    return body
 
 
 @router.post("/plans/{plan_id}/plan-suggestions/{suggestion_id}/accept")

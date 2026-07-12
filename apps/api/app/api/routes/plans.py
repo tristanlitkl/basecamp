@@ -578,6 +578,52 @@ async def resync_plan(
     ).all()
     creator_names = {str(user.id): user.display_name for _, user in member_rows}
 
+    date_suggestion_rows = [
+        {
+            "id": str(suggestion.id),
+            "starts_on": suggestion.starts_on.isoformat(),
+            "ends_on": suggestion.ends_on.isoformat(),
+            "message": suggestion.message,
+            "status": suggestion.status,
+            "author_id": str(suggestion.suggested_by_user_id),
+            "author_display_name": author.display_name,
+            "yes_votes": sum(
+                1
+                for vote in date_votes
+                if vote.suggestion_id == suggestion.id and vote.vote == "yes"
+            ),
+            "maybe_votes": sum(
+                1
+                for vote in date_votes
+                if vote.suggestion_id == suggestion.id and vote.vote == "maybe"
+            ),
+            "no_votes": sum(
+                1
+                for vote in date_votes
+                if vote.suggestion_id == suggestion.id and vote.vote == "no"
+            ),
+            "vote": next(
+                (
+                    vote.vote
+                    for vote in date_votes
+                    if vote.suggestion_id == suggestion.id and vote.user_id == membership.user_id
+                ),
+                None,
+            ),
+            "created_at": scalar(suggestion.created_at),
+        }
+        for suggestion, author in date_suggestions
+    ]
+    date_suggestion_rows.sort(
+        key=lambda row: (
+            -row["yes_votes"],
+            -row["maybe_votes"],
+            row["no_votes"],
+            row["starts_on"],
+            row["created_at"],
+        )
+    )
+
     activity_scores = {
         str(activity.id): {
             "yes": sum(
@@ -719,42 +765,7 @@ async def resync_plan(
             }
             for availability in availability_rows
         ],
-        date_suggestions=[
-            {
-                "id": str(suggestion.id),
-                "starts_on": suggestion.starts_on.isoformat(),
-                "ends_on": suggestion.ends_on.isoformat(),
-                "message": suggestion.message,
-                "status": suggestion.status,
-                "author_id": str(suggestion.suggested_by_user_id),
-                "author_display_name": author.display_name,
-                "yes_votes": sum(
-                    1
-                    for vote in date_votes
-                    if vote.suggestion_id == suggestion.id and vote.vote == "yes"
-                ),
-                "maybe_votes": sum(
-                    1
-                    for vote in date_votes
-                    if vote.suggestion_id == suggestion.id and vote.vote == "maybe"
-                ),
-                "no_votes": sum(
-                    1
-                    for vote in date_votes
-                    if vote.suggestion_id == suggestion.id and vote.vote == "no"
-                ),
-                "vote": next(
-                    (
-                        vote.vote
-                        for vote in date_votes
-                        if vote.suggestion_id == suggestion.id
-                        and vote.user_id == membership.user_id
-                    ),
-                    None,
-                ),
-            }
-            for suggestion, author in date_suggestions
-        ],
+        date_suggestions=date_suggestion_rows,
         plan_suggestions=[
             {
                 "id": str(suggestion.id),

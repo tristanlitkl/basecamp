@@ -9,14 +9,14 @@ import {
   createActivity,
   createActivitySuggestion,
   createComment,
-  createDateSuggestion,
+  createDateSuggestion, createPlanSuggestion,
   createExpense,
   createInvite,
   createItineraryItem,
   deleteActivity,
   deleteExpense,
   deleteItineraryItem,
-  decideActivitySuggestion,
+  decideActivitySuggestion, decidePlanSuggestion,
   decideDateSuggestion,
   getPlanBalances,
   patchActivity,
@@ -28,7 +28,7 @@ import {
   resyncPlan,
   setPlanLifecycle,
   syncUser
-  ,upsertDateAvailability, voteActivity
+  ,upsertDateAvailability, voteActivity, voteDateSuggestion
 } from "@/lib/api-client";
 import { usePlanSocket } from "@/hooks/usePlanSocket";
 import type { ResyncSnapshot } from "@/types/api";
@@ -48,7 +48,7 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
     createItineraryItem: vi.fn(), patchItineraryItem: vi.fn(), reorderItineraryItem: vi.fn(), deleteItineraryItem: vi.fn(),
     createExpense: vi.fn(), patchExpense: vi.fn(), deleteExpense: vi.fn(),
     patchPlan: vi.fn(), setPlanLifecycle: vi.fn(), createInvite: vi.fn()
-    ,changeMemberRole: vi.fn(), removeMember: vi.fn(), createComment: vi.fn(), createActivitySuggestion: vi.fn(), decideActivitySuggestion: vi.fn(), upsertDateAvailability: vi.fn(), createDateSuggestion: vi.fn(), decideDateSuggestion: vi.fn()
+    ,changeMemberRole: vi.fn(), removeMember: vi.fn(), createComment: vi.fn(), createActivitySuggestion: vi.fn(), decideActivitySuggestion: vi.fn(), upsertDateAvailability: vi.fn(), createDateSuggestion: vi.fn(), decideDateSuggestion: vi.fn(), voteDateSuggestion: vi.fn(), createPlanSuggestion: vi.fn(), decidePlanSuggestion: vi.fn()
   };
 });
 
@@ -308,5 +308,61 @@ describe("Phase 1B.5 planning UI", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Dismiss" }).at(-1)!);
     await waitFor(() => expect(decideDateSuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", "date-1", "dismiss", 4, "operation-id"));
     expect(vi.mocked(resyncPlan).mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it("edits plan-level travel metadata in integer minutes and keeps members read-only", async () => {
+    const owner = snapshot();
+    owner.plan.travel_mode = "train";
+    owner.plan.travel_duration_minutes = 125;
+    owner.plan.travel_notes = "Meet at the station";
+    await renderPlan(owner);
+    fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
+    expect((screen.getByLabelText("Travel hours") as HTMLInputElement).value).toBe("2");
+    expect((screen.getByLabelText("Travel minutes") as HTMLInputElement).value).toBe("5");
+    fireEvent.change(screen.getByLabelText("Travel hours"), { target: { value: "3" } });
+    fireEvent.change(screen.getByLabelText("Travel minutes"), { target: { value: "20" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save constraints" }));
+    await waitFor(() => expect(patchPlan).toHaveBeenCalledWith("app-jwt", "plan-1", expect.objectContaining({ travel_mode: "train", travel_duration_minutes: 200, travel_notes: "Meet at the station" })));
+    await waitFor(() => expect(resyncPlan).toHaveBeenCalledTimes(2));
+
+    cleanup();
+    await renderPlan(snapshot("member"));
+    expect(screen.getByText("Only an owner or co-owner can edit constraints.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Edit settings" })).toBeNull();
+  });
+
+  it("keeps native discussion disclosure accessible and resyncs travel-window votes", async () => {
+    const next = snapshot();
+    next.activity_comments = [{ id: "comment-1", activity_id: "activity-1", author_id: "user-2", author_display_name: "Member", body: "Great idea", version: 1, deleted_at: null, created_at: "2026-01-01", updated_at: "2026-01-01" }];
+    next.date_suggestions = [
+      { id: "date-later", starts_on: "2026-08-20", ends_on: "2026-08-22", message: null, status: "open", author_id: "user-2", author_display_name: "Member", yes_votes: 1, maybe_votes: 0, no_votes: 0, vote: null, created_at: "2026-01-02" },
+      { id: "date-leading", starts_on: "2026-08-23", ends_on: "2026-08-25", message: null, status: "accepted", author_id: "user-2", author_display_name: "Member", yes_votes: 2, maybe_votes: 0, no_votes: 0, vote: "yes", created_at: "2026-01-03" }
+    ];
+    await renderPlan(next);
+    const disclosure = screen.getByText(/Discussion \(1\)/).closest("details")!;
+    expect(disclosure.open).toBe(false);
+    fireEvent.click(screen.getByText(/Discussion \(1\)/));
+    expect(disclosure.open).toBe(true);
+    expect(screen.getByText("Great idea")).toBeTruthy();
+    const leading = screen.getAllByText(/Aug 23, 2026/).find((element) => element.tagName === "STRONG")!.closest("article")!;
+    expect(within(leading).getByRole("button", { name: /Vote yes/ }).hasAttribute("disabled")).toBe(true);
+    const open = screen.getAllByText(/Aug 20, 2026/).find((element) => element.tagName === "STRONG")!.closest("article")!;
+    fireEvent.click(within(open).getByRole("button", { name: /Vote maybe/ }));
+    await waitFor(() => expect(voteDateSuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", "date-later", "maybe", "operation-id"));
+    await waitFor(() => expect(resyncPlan).toHaveBeenCalledTimes(2));
+  });
+
+  it("reviews and adopts whole-plan ideas without hiding preserved plan surfaces", async () => {
+    const next = snapshot();
+    next.plan_suggestions = [{ id: "plan-idea", title: "Mountain weekend", description: "Cooler air", starts_on: null, ends_on: null, budget_cents: null, max_drive_minutes: null, travel_mode: "train", travel_duration_minutes: 95, status: "open", author_id: "user-2", author_display_name: "Member", created_at: "2026-01-01" }];
+    await renderPlan(next);
+    expect(screen.getByRole("heading", { name: "Kayaking" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Expenses" })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Proposed plan name"), { target: { value: "Desert weekend" } });
+    fireEvent.click(screen.getByRole("button", { name: "Suggest a different trip" }));
+    await waitFor(() => expect(createPlanSuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", expect.objectContaining({ title: "Desert weekend", client_operation_id: "operation-id" })));
+    fireEvent.click(screen.getByRole("button", { name: "Adopt this plan idea" }));
+    await waitFor(() => expect(decidePlanSuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", "plan-idea", "accept", 4, "operation-id"));
+    await waitFor(() => expect(resyncPlan).toHaveBeenCalledTimes(3));
   });
 });
