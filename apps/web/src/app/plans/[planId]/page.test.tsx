@@ -11,6 +11,7 @@ import {
   createActivitySuggestion,
   createComment,
   createDateSuggestion, createPlanSuggestion,
+  createCoOwnerRequest, decideCoOwnerRequest,
   createExpense,
   createInvite,
   createItineraryItem,
@@ -28,8 +29,8 @@ import {
   removeMember,
   resyncPlan,
   setPlanLifecycle,
-  syncUser
-  ,upsertDateAvailability, voteActivity, voteDateSuggestion
+  syncUser, withdrawCoOwnerRequest,
+  upsertDateAvailability, voteActivity, voteDateSuggestion
 } from "@/lib/api-client";
 import { usePlanSocket } from "@/hooks/usePlanSocket";
 import type { ResyncSnapshot } from "@/types/api";
@@ -48,8 +49,8 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
     createActivity: vi.fn(), patchActivity: vi.fn(), deleteActivity: vi.fn(), voteActivity: vi.fn(),
     createItineraryItem: vi.fn(), patchItineraryItem: vi.fn(), reorderItineraryItem: vi.fn(), deleteItineraryItem: vi.fn(),
     createExpense: vi.fn(), patchExpense: vi.fn(), deleteExpense: vi.fn(),
-    patchPlan: vi.fn(), setPlanLifecycle: vi.fn(), createInvite: vi.fn()
-    ,changeMemberRole: vi.fn(), removeMember: vi.fn(), createComment: vi.fn(), createActivitySuggestion: vi.fn(), decideActivitySuggestion: vi.fn(), upsertDateAvailability: vi.fn(), createDateSuggestion: vi.fn(), decideDateSuggestion: vi.fn(), voteDateSuggestion: vi.fn(), createPlanSuggestion: vi.fn(), decidePlanSuggestion: vi.fn()
+    patchPlan: vi.fn(), setPlanLifecycle: vi.fn(), createInvite: vi.fn(),
+    changeMemberRole: vi.fn(), removeMember: vi.fn(), createCoOwnerRequest: vi.fn(), withdrawCoOwnerRequest: vi.fn(), decideCoOwnerRequest: vi.fn(), createComment: vi.fn(), createActivitySuggestion: vi.fn(), decideActivitySuggestion: vi.fn(), upsertDateAvailability: vi.fn(), createDateSuggestion: vi.fn(), decideDateSuggestion: vi.fn(), voteDateSuggestion: vi.fn(), createPlanSuggestion: vi.fn(), decidePlanSuggestion: vi.fn()
   };
 });
 
@@ -527,5 +528,83 @@ describe("Phase 1B.5 planning UI", () => {
     const styles = readFileSync("src/app/globals.css", "utf8");
     expect(styles).toContain(".disclosure-toggle[aria-expanded=\"false\"] .disclosure-chevron");
     expect(styles).toContain("@media (prefers-reduced-motion: reduce)");
+  });
+
+  it("keeps owner and member date-poll selections isolated through realtime resync while totals match", async () => {
+    const owner = snapshot();
+    owner.date_suggestions = [{ id: "date-1", starts_on: "2026-10-01", ends_on: "2026-10-03", message: null, status: "open", author_id: "user-2", author_display_name: "Member", author_avatar_emoji: "😎", yes_votes: 1, maybe_votes: 0, no_votes: 1, current_user_vote: "yes", created_at: "2026-01-01" }];
+    await renderPlan(owner);
+    const yes = screen.getByRole("button", { name: /Vote yes for Oct 1/ });
+    const no = screen.getByRole("button", { name: /Vote no for Oct 1/ });
+    expect(yes.getAttribute("aria-pressed")).toBe("true");
+    expect(no.getAttribute("aria-pressed")).toBe("false");
+    expect(yes.textContent).toContain("1");
+    expect(no.textContent).toContain("1");
+
+    const member = structuredClone(owner);
+    member.current_user_id = "user-2";
+    member.plan.role = "member";
+    member.date_suggestions[0].current_user_vote = "no";
+    vi.mocked(resyncPlan).mockResolvedValue(member);
+    await act(async () => { await vi.mocked(usePlanSocket).mock.calls[0][0].onPlanEvent?.(); });
+    await waitFor(() => expect(screen.getByRole("button", { name: /Vote no for Oct 1/ }).getAttribute("aria-pressed")).toBe("true"));
+    expect(screen.getByRole("button", { name: /Vote yes for Oct 1/ }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("button", { name: /Vote yes for Oct 1/ }).textContent).toContain("1");
+    expect(screen.getByRole("button", { name: /Vote no for Oct 1/ }).textContent).toContain("1");
+  });
+
+  it("opens a focus-managed Trip Members modal with plain emoji, overflow, role actions, confirmation, and request workflows", async () => {
+    const next = snapshot();
+    next.members[0].avatar_emoji = "🧭";
+    next.members.push(
+      { id: "pm-3", plan_id: "plan-1", user_id: "user-3", role: "co_owner", display_name: "Alex", avatar_emoji: "😎", created_at: "2026-01-01" },
+      { id: "pm-4", plan_id: "plan-1", user_id: "user-4", role: "member", display_name: "Mia", avatar_emoji: "🌲", created_at: "2026-01-01" },
+      { id: "pm-5", plan_id: "plan-1", user_id: "user-5", role: "member", display_name: "One", created_at: "2026-01-01" },
+      { id: "pm-6", plan_id: "plan-1", user_id: "user-6", role: "member", display_name: "Two", created_at: "2026-01-01" },
+      { id: "pm-7", plan_id: "plan-1", user_id: "user-7", role: "member", display_name: "Three", created_at: "2026-01-01" },
+    );
+    await renderPlan(next);
+    const trigger = screen.getByRole("button", { name: /Trip members/ });
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Trip Members" });
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    const ownerEmoji = within(dialog).getAllByText("🧭")[0];
+    expect(ownerEmoji.className).toBe("member-plain-emoji");
+    expect(ownerEmoji.parentElement?.className).not.toContain("avatar");
+    expect(screen.getByText("+4 more")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Demote to member" }));
+    await waitFor(() => expect(changeMemberRole).toHaveBeenCalledWith("app-jwt", "plan-1", "user-3", "member", "operation-id"));
+    fireEvent.click(within(dialog).getAllByRole("button", { name: "Remove from trip" })[0]);
+    expect(screen.getByRole("alertdialog", { name: "Confirm member removal" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm removal" }));
+    await waitFor(() => expect(removeMember).toHaveBeenCalled());
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Trip Members" })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+
+    cleanup();
+    const member = snapshot("member");
+    await renderPlan(member);
+    fireEvent.click(screen.getByRole("button", { name: /Trip members/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Request co-owner access" }));
+    await waitFor(() => expect(createCoOwnerRequest).toHaveBeenCalledWith("app-jwt", "plan-1", null, "operation-id"));
+
+    cleanup();
+    const pending = snapshot("member"); pending.co_owner_requests = [{ id: "request-1", plan_id: "plan-1", requester_user_id: "user-1", requester_display_name: "Owner", requester_avatar_emoji: "😀", status: "pending", note: "Please help", version: 1, decided_by_user_id: null, decided_at: null, created_at: "2026-01-01", updated_at: "2026-01-01" }];
+    await renderPlan(pending);
+    fireEvent.click(screen.getByRole("button", { name: /Trip members/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Withdraw request" }));
+    await waitFor(() => expect(withdrawCoOwnerRequest).toHaveBeenCalledWith("app-jwt", "plan-1", "request-1", 1, "operation-id"));
+
+    cleanup();
+    const queue = snapshot(); queue.co_owner_requests = [{ ...pending.co_owner_requests[0], requester_user_id: "user-2", requester_display_name: "Member" }];
+    await renderPlan(queue);
+    fireEvent.click(screen.getByRole("button", { name: /Trip members/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(decideCoOwnerRequest).toHaveBeenCalledWith("app-jwt", "plan-1", "request-1", "approve", 1, "operation-id"));
+    fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+    await waitFor(() => expect(decideCoOwnerRequest).toHaveBeenCalledWith("app-jwt", "plan-1", "request-1", "deny", 1, "operation-id"));
+    expect(screen.queryByText("Member directory")).toBeNull();
   });
 });

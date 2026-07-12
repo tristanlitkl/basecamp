@@ -10,7 +10,10 @@ export function AdventureBackground() {
     let frame = 0;
     const update = () => {
       frame = 0;
-      document.documentElement.style.setProperty("--adventure-scroll", `${Math.min(window.scrollY * 0.035, 42)}px`);
+      const max = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1);
+      const progress = Math.min(Math.max(window.scrollY / max, 0), 1);
+      document.documentElement.style.setProperty("--adventure-progress", progress.toFixed(4));
+      document.documentElement.style.setProperty("--adventure-scroll", `${progress * 42}px`);
     };
     const onScroll = () => { if (!frame) frame = window.requestAnimationFrame(update); };
     update();
@@ -19,6 +22,7 @@ export function AdventureBackground() {
       window.removeEventListener("scroll", onScroll);
       if (frame) window.cancelAnimationFrame(frame);
       document.documentElement.style.removeProperty("--adventure-scroll");
+      document.documentElement.style.removeProperty("--adventure-progress");
     };
   }, []);
 

@@ -1,10 +1,11 @@
 export const DEFAULT_AVATAR_EMOJI = "🧭";
 
 export const AVATAR_GROUPS = [
-  { label: "Adventure", choices: [{ emoji: "🧭", label: "compass" }, { emoji: "⛺", label: "tent" }, { emoji: "🗺️", label: "map" }, { emoji: "🥾", label: "hiking boot" }] },
-  { label: "Nature", choices: [{ emoji: "🌲", label: "evergreen tree" }, { emoji: "🏔️", label: "mountain" }, { emoji: "🌊", label: "wave" }, { emoji: "🌙", label: "moon" }] },
-  { label: "Animals", choices: [{ emoji: "🦊", label: "fox" }, { emoji: "🐻", label: "bear" }, { emoji: "🦉", label: "owl" }, { emoji: "🐕", label: "dog" }] },
-  { label: "Fun", choices: [{ emoji: "🎒", label: "backpack" }, { emoji: "🔥", label: "campfire" }, { emoji: "✨", label: "sparkles" }, { emoji: "🚐", label: "camper van" }] }
+  { label: "Expressions", choices: "😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😋 😎 🤓 🧐 🤨 😏 😒 😞 😔 😟 😕 🙁 ☹️ 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🫡 🤭 🫢 🤫 🤥 😶 😐 😑 😬 🙄 😯 😦 😧 😮 😲 🥱 😴 🤤 😪 😵 🤐 🥴 🤢 🤮 🤧 😷 🤒 🤕 🤠 🤑 😈 👿 👻 👽 🤖 💀".split(" ").map((emoji) => ({ emoji, label: `expression ${emoji}` })) },
+  { label: "Adventure", choices: "🧭 🗺️ ⛰️ 🏔️ 🏕️ ⛺ 🥾 🎒 🚐 ✈️ 🚗 🚙 🚲 🛶 ⛵ 🚤 🌋 🏝️".split(" ").map((emoji) => ({ emoji, label: `adventure ${emoji}` })) },
+  { label: "Nature", choices: "🌲 🌳 🌴 🌵 🌊 🌙 ⭐ ☀️ 🌈 🔥 ❄️ 🍂 🌸 🌻 🍄 ✨".split(" ").map((emoji) => ({ emoji, label: `nature ${emoji}` })) },
+  { label: "Animals", choices: "🐻 🦊 🐺 🐼 🐸 🐵 🐯 🦁 🐧 🦅 🦉 🐙 🦈 🐬 🐢 🐕".split(" ").map((emoji) => ({ emoji, label: emoji === "🦊" ? "fox" : `animal ${emoji}` })) },
+  { label: "Food and fun", choices: "🍜 🍣 🍕 🌮 🍔 🍓 ☕ 🧋 🎉 🎮 🎸 🏀 ⚽ 🎯 🎲".split(" ").map((emoji) => ({ emoji, label: `food or fun ${emoji}` })) }
 ] as const;
 
 export function avatarEmoji(value: string | null | undefined) {

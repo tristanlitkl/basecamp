@@ -36,6 +36,10 @@ body { background-image: radial-gradient(circle at 91% 2%, rgb(49 88 232 / 10%),
 .adventure-background, .adventure-background i { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
 .adventure-background { overflow: hidden; background-image: linear-gradient(rgb(49 88 232 / 3%) 1px, transparent 1px), linear-gradient(90deg, rgb(49 88 232 / 3%) 1px, transparent 1px); background-size: 62px 62px; }
 .adventure-background i { display: block; content: ""; }
+.adventure-aurora { opacity: calc(.55 + var(--adventure-progress, 0) * .18); background: radial-gradient(circle at 18% 22%, rgb(41 91 255 / 30%), transparent 28%), radial-gradient(circle at 82% 62%, rgb(27 210 226 / 22%), transparent 30%), radial-gradient(circle at 48% 88%, rgb(120 92 230 / 16%), transparent 24%); transform: translate3d(0, var(--adventure-scroll, 0), 0) scale(calc(1 + var(--adventure-progress, 0) * .08)); }
+.adventure-contours { inset: 8% 58% 52% -8% !important; border: 1px solid rgb(73 117 255 / 18%); border-radius: calc(50% - var(--adventure-progress, 0) * 18%); background: linear-gradient(135deg, rgb(255 255 255 / 35%), rgb(39 198 223 / 8%)); transform: translate3d(calc(var(--adventure-progress, 0) * 8vw), calc(var(--adventure-progress, 0) * 10vh), 0) rotate(calc(var(--adventure-progress, 0) * 8deg)); }
+.adventure-route { inset: 58% -8% -22% 63% !important; border-radius: calc(34% + var(--adventure-progress, 0) * 16%); background: linear-gradient(145deg, rgb(49 88 232 / 14%), rgb(32 206 191 / 10%)); transform: translate3d(calc(var(--adventure-progress, 0) * -6vw), calc(var(--adventure-progress, 0) * -8vh), 0) rotate(calc(var(--adventure-progress, 0) * -6deg)); }
+@media (prefers-reduced-motion: reduce) { .adventure-background i { transform: none; transition: none; } }
 .adventure-aurora { inset: -10% !important; background: radial-gradient(ellipse at 78% 13%, rgb(84 223 236 / 17%), transparent 28%), radial-gradient(ellipse at 17% 74%, rgb(111 85 237 / 10%), transparent 30%); transform: translate3d(0, calc(var(--adventure-scroll, 0px) * -.32), 0); }
 .adventure-contours { inset: auto -14% -9% !important; height: 52%; opacity: .5; background: repeating-radial-gradient(ellipse at 55% 100%, transparent 0 22px, rgb(49 88 232 / 11%) 23px 24px, transparent 25px 38px); transform: translate3d(0, calc(var(--adventure-scroll, 0px) * .18), 0); }
 .adventure-route { background: radial-gradient(circle at 21% 25%, #4dd7e8 0 2px, transparent 3px), radial-gradient(circle at 76% 63%, #7266ee 0 2px, transparent 3px), linear-gradient(125deg, transparent 43%, rgb(49 88 232 / 15%) 43.1% 43.25%, transparent 43.4%); transform: translate3d(0, calc(var(--adventure-scroll, 0px) * -.12), 0); }
@@ -314,6 +318,10 @@ html { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) var(--scro
 .emoji-picker { display: grid; gap: 10px; margin: 0; padding: 0; border: 0; }
 .emoji-picker legend { font-weight: 800; }
 .emoji-picker p { margin: 0; }
+.emoji-picker-tabs { display: flex; gap: 6px; overflow-x: auto; }
+.emoji-picker-tab { padding: 7px 9px; border: 1px solid var(--border); border-radius: 999px; background: white; white-space: nowrap; cursor: pointer; }
+.emoji-picker-tab[aria-selected="true"] { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-dark); }
+.emoji-picker-scroll { max-height: 250px; overflow-y: auto; overscroll-behavior: contain; }
 .emoji-picker-group { display: grid; gap: 5px; }
 .emoji-picker-label { color: var(--muted); font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
 .emoji-picker-options { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -327,7 +335,8 @@ html { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) var(--scro
 .member-preview { display: inline-flex; min-width: 0; align-items: center; gap: 4px; font-size: .78rem; font-weight: 750; white-space: nowrap; }
 .member-preview > span:last-child { overflow: hidden; text-overflow: ellipsis; }
 .member-overflow { flex: 0 0 auto; color: var(--brand-dark); font-size: .74rem; font-weight: 850; white-space: nowrap; }
-.trip-members-popover { position: absolute; z-index: 40; top: calc(100% + 8px); right: 0; display: grid; gap: 12px; width: min(620px, calc(100vw - 32px)); max-height: min(72vh, 650px); padding: 16px; overflow: hidden; border: 1px solid var(--border); border-radius: 13px; background: white; box-shadow: 0 18px 42px rgb(20 33 61 / 18%); }
+.trip-members-overlay { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 16px; background: rgb(12 22 48 / 32%); }
+.trip-members-popover { display: grid; gap: 12px; width: min(720px, 100%); max-height: min(82vh, 720px); padding: 18px; overflow: hidden; border: 1px solid rgb(255 255 255 / 65%); border-radius: 18px; background: rgb(255 255 255 / 94%); backdrop-filter: blur(14px); box-shadow: 0 24px 70px rgb(20 33 61 / 28%), inset 0 1px rgb(255 255 255 / 80%); }
 .member-panel-close { display: inline-grid; width: 34px; height: 34px; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--text); font-size: 1.5rem; line-height: 1; cursor: pointer; }
 .member-panel-close:hover { background: var(--surface-soft); }
 .trip-members-list { display: grid; gap: 7px; min-height: 0; overflow: auto; }
@@ -339,6 +348,8 @@ html { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) var(--scro
 .member-directory-name small { color: var(--muted); }
 .co-owner-request-panel { display: grid; gap: 8px; padding-top: 11px; border-top: 1px solid var(--border); }
 .co-owner-request-panel p { margin: 0; }
+.remove-confirmation { padding: 12px; border: 1px solid #f0caca; border-radius: 12px; background: #fff7f7; }
+.remove-confirmation p { margin-bottom: 9px; }
 .co-owner-request-row { grid-template-columns: auto minmax(0, 1fr) auto; }
 .member-panel-row .member-actions, .co-owner-request-row .member-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 
@@ -449,5 +460,5 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .member-preview:nth-of-type(n + 3) { display: none; }
   .member-panel-row, .co-owner-request-row { grid-template-columns: auto minmax(0, 1fr) auto; }
   .member-panel-row .member-actions, .co-owner-request-row .member-actions { grid-column: 2 / -1; justify-content: flex-start; }
-  .trip-members-popover { right: auto; left: 0; max-height: 76vh; }
+  .trip-members-popover { max-height: calc(100dvh - 24px); padding: 14px; }
 }

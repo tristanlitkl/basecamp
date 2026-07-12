@@ -97,11 +97,28 @@ function TripMembersCard({
   onDecision: (requestId: string, decision: "approve" | "deny", version: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const sortedMembers = sortMembers(members);
   const ownRequest = requests.find((request) => request.requester_user_id === currentUserId);
   const pendingRequests = requests.filter((request) => request.status === "pending");
   const close = () => { setExpanded(false); requestAnimationFrame(() => triggerRef.current?.focus()); };
+  useEffect(() => {
+    if (!expanded) return;
+    panelRef.current?.querySelector<HTMLElement>("button")?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); close(); return; }
+      if (event.key !== "Tab" || !panelRef.current) return;
+      const items = [...panelRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex="0"]')];
+      if (!items.length) return;
+      const first = items[0], last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [expanded]);
   return <div className="card stat trip-members-stat" onKeyDown={(event) => { if (event.key === "Escape" && expanded) { event.preventDefault(); close(); } }}>
     <button ref={triggerRef} aria-controls="trip-members-directory" aria-expanded={expanded} className="trip-members-trigger" onClick={() => setExpanded((open) => !open)} type="button">
       <span><i aria-hidden="true">◉</i> Trip members</span>
@@ -110,12 +127,13 @@ function TripMembersCard({
         {sortedMembers.length > 3 && <span className="member-overflow" aria-label={`${sortedMembers.length - 3} more members`}>+{sortedMembers.length - 3} more</span>}
       </span>
     </button>
-    {expanded && <div className="trip-members-popover" id="trip-members-directory" role="dialog" aria-modal="false" aria-label="Trip Members">
+    {expanded && <div className="trip-members-overlay"><div ref={panelRef} className="trip-members-popover" id="trip-members-directory" role="dialog" aria-modal="true" aria-label="Trip Members">
       <div className="split"><strong>Trip Members</strong><button aria-label="Close trip members" className="member-panel-close" onClick={close} type="button">×</button></div>
-      <div className="trip-members-list">{sortedMembers.map((member) => <article className="member-panel-row" key={member.user_id}><span className="member-plain-emoji" aria-hidden="true">{avatarEmoji(member.avatar_emoji)}</span><span className="member-directory-name"><strong>{member.display_name}</strong>{member.user_id === currentUserId && <small>You</small>}</span><span className={`badge badge-${member.role}`}>{member.role.replace("_", "-")}</span>{role === "owner" && member.role !== "owner" && member.user_id !== currentUserId && <span className="member-actions"><button className="btn btn-secondary" disabled={disabled} onClick={() => onChangeRole(member.user_id, member.role === "co_owner" ? "member" : "co_owner")}>{member.role === "co_owner" ? "Demote to member" : "Promote to co-owner"}</button><button className="btn btn-danger" disabled={disabled} onClick={() => onRemove(member.user_id)}>Remove from trip</button></span>}{role === "co_owner" && member.role === "member" && member.user_id !== currentUserId && <span className="member-actions"><button className="btn btn-danger" disabled={disabled} onClick={() => onRemove(member.user_id)}>Remove from trip</button></span>}</article>)}</div>
+      <div className="trip-members-list">{sortedMembers.map((member) => <article className="member-panel-row" key={member.user_id}><span className="member-plain-emoji" aria-hidden="true">{avatarEmoji(member.avatar_emoji)}</span><span className="member-directory-name"><strong>{member.display_name}</strong>{member.user_id === currentUserId && <small>You</small>}</span><span className={`badge badge-${member.role}`}>{member.role.replace("_", "-")}</span>{role === "owner" && member.role !== "owner" && member.user_id !== currentUserId && <span className="member-actions"><button className="btn btn-secondary" disabled={disabled} onClick={() => onChangeRole(member.user_id, member.role === "co_owner" ? "member" : "co_owner")}>{member.role === "co_owner" ? "Demote to member" : "Promote to co-owner"}</button><button className="btn btn-danger" disabled={disabled} onClick={() => setRemoveTarget(member.user_id)}>Remove from trip</button></span>}{role === "co_owner" && member.role === "member" && member.user_id !== currentUserId && <span className="member-actions"><button className="btn btn-danger" disabled={disabled} onClick={() => setRemoveTarget(member.user_id)}>Remove from trip</button></span>}</article>)}</div>
+      {removeTarget && <div className="remove-confirmation" role="alertdialog" aria-label="Confirm member removal"><p>Remove {sortedMembers.find((member) => member.user_id === removeTarget)?.display_name} from this trip?</p><div className="cluster"><button className="btn btn-danger" disabled={disabled} onClick={() => { onRemove(removeTarget); setRemoveTarget(null); }}>Confirm removal</button><button className="btn btn-secondary" onClick={() => setRemoveTarget(null)}>Cancel</button></div></div>}
       {role === "member" && <div className="co-owner-request-panel"><strong>Co-owner access</strong>{ownRequest?.status === "pending" ? <div className="cluster"><span className="muted small">Request pending</span><button className="btn btn-secondary" disabled={disabled} onClick={() => onWithdraw(ownRequest.id, ownRequest.version)}>Withdraw request</button></div> : <><p className="muted small">Ask the primary owner for help managing this trip.</p><button className="btn btn-secondary" disabled={disabled} onClick={onRequest}>Request co-owner access</button>{ownRequest && <p className="muted small">Latest request: {ownRequest.status}</p>}</>}</div>}
       {role === "owner" && <div className="co-owner-request-panel"><strong>Co-owner requests</strong>{pendingRequests.length === 0 ? <p className="muted small">No pending requests.</p> : pendingRequests.map((request) => <div className="co-owner-request-row" key={request.id}><span className="member-plain-emoji" aria-hidden="true">{avatarEmoji(request.requester_avatar_emoji)}</span><span className="member-directory-name"><strong>{request.requester_display_name}</strong><small>{new Date(request.created_at).toLocaleDateString()} {request.note ? `· ${request.note}` : ""}</small></span><span className="member-actions"><button className="btn" disabled={disabled} onClick={() => onDecision(request.id, "approve", request.version)}>Approve</button><button className="btn btn-secondary" disabled={disabled} onClick={() => onDecision(request.id, "deny", request.version)}>Deny</button></span></div>)}</div>}
-    </div>}
+    </div></div>}
   </div>;
 }
 
