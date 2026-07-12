@@ -259,7 +259,7 @@ export function setPlanLifecycle(
 export function createItineraryItem(
   token: string,
   planId: string,
-  input: { title: string; client_operation_id: string }
+  input: { title: string; activity_id?: string; client_operation_id: string }
 ): Promise<ItineraryMutationResponse> {
   return apiFetch(token, `/plans/${planId}/itinerary-items`, { method: "POST", body: input });
 }

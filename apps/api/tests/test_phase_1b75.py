@@ -117,6 +117,49 @@ def test_comments_suggestions_and_date_coordination_use_authoritative_state() ->
     assert availability.status_code == 200 and accepted_date.status_code == 200
 
 
+def test_resync_includes_named_member_availability_for_calendar_aggregation() -> None:
+    with client_context() as client:
+        owner_jwt, plan_id = create_plan(client, f"owner-{uuid4()}")
+        member_jwt, member_id = join_member(client, owner_jwt, plan_id)
+        assert (
+            client.patch(
+                "/auth/me", json={"display_name": "Trip owner"}, headers=bearer(owner_jwt)
+            ).status_code
+            == 200
+        )
+        assert (
+            client.patch(
+                "/auth/me", json={"display_name": "Trip member"}, headers=bearer(member_jwt)
+            ).status_code
+            == 200
+        )
+        assert (
+            client.put(
+                f"/plans/{plan_id}/date-availability",
+                json={"date": "2026-08-01", "status": "available"},
+                headers=bearer(owner_jwt),
+            ).status_code
+            == 200
+        )
+        assert (
+            client.put(
+                f"/plans/{plan_id}/date-availability",
+                json={"date": "2026-08-01", "status": "maybe"},
+                headers=bearer(member_jwt),
+            ).status_code
+            == 200
+        )
+        snapshot = client.get(f"/plans/{plan_id}/resync", headers=bearer(owner_jwt)).json()
+
+    availability = snapshot["date_availability"]
+    assert {entry["user_id"]: entry["status"] for entry in availability} == {
+        snapshot["current_user_id"]: "available",
+        member_id: "maybe",
+    }
+    assert {entry["member_display_name"] for entry in availability} == {"Trip owner", "Trip member"}
+    assert all("email" not in entry for entry in availability)
+
+
 def test_idempotency_concurrency_comment_suggestion_and_date_suggestion_create() -> None:
     with client_context() as client:
         owner_jwt, plan_id = create_plan(client, f"owner-{uuid4()}")

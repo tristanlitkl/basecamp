@@ -7,16 +7,17 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, update
+from sqlalchemy import BigInteger, cast, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_plan_member
 from app.db.base import get_session
+from app.models.activity import Activity
 from app.models.itinerary import ItineraryItem
 from app.models.plan import PlanMember
 from app.models.user import User
 from app.services.event_service import append_plan_event
-from app.services.idempotency_service import claim_operation, complete_operation
+from app.services.idempotency_service import claim_operation, complete_operation, fail_operation
 from app.services.planning_service import bump_planning_version, require_mutable_plan
 
 router = APIRouter(tags=["itinerary"])
@@ -27,6 +28,7 @@ class ItineraryCreate(BaseModel):
     activity_id: UUID | None = None
     starts_at: datetime | None = None
     ends_at: datetime | None = None
+    expected_plan_version: int | None = Field(default=None, ge=1)
     client_operation_id: str | None = Field(default=None, max_length=120)
 
 
@@ -86,8 +88,23 @@ async def create_item(
     membership: PlanMember = Depends(require_plan_member),
     session: AsyncSession = Depends(get_session),
 ) -> Any:
-    await require_mutable_plan(session, plan_id)
-    data = payload.model_dump(exclude={"client_operation_id"})
+    plan = await require_mutable_plan(session, plan_id)
+    if payload.expected_plan_version is not None and plan.version != payload.expected_plan_version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail={"error": "version_conflict"}
+        )
+    if payload.activity_id is not None:
+        activity = (
+            await session.execute(
+                select(Activity).where(
+                    Activity.id == payload.activity_id, Activity.plan_id == plan_id
+                )
+            )
+        ).scalar_one_or_none()
+        if activity is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail={"error": "activity_not_found"}
+            )
     claim = await claim_operation(
         session,
         plan_id=plan_id,
@@ -98,6 +115,34 @@ async def create_item(
     )
     if isinstance(claim, dict):
         return claim
+    if payload.activity_id is not None:
+        await session.execute(
+            select(
+                func.pg_advisory_xact_lock(
+                    cast(func.hashtext(f"{plan_id}:{payload.activity_id}"), BigInteger)
+                )
+            )
+        )
+        existing = (
+            await session.execute(
+                select(ItineraryItem.id).where(
+                    ItineraryItem.plan_id == plan_id,
+                    ItineraryItem.activity_id == payload.activity_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            detail = {"error": "activity_already_in_itinerary"}
+            await fail_operation(
+                session,
+                claim,
+                response_status=status.HTTP_409_CONFLICT,
+                response=detail,
+                failure_type="permanent",
+            )
+            await session.commit()
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+    data = payload.model_dump(exclude={"client_operation_id", "expected_plan_version"})
     largest = (
         await session.execute(
             select(func.max(ItineraryItem.position_key)).where(ItineraryItem.plan_id == plan_id)

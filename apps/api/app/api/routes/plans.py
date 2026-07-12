@@ -536,16 +536,13 @@ async def resync_plan(
         )
     ).all()
     availability_rows = (
-        (
-            await session.execute(
-                select(PlanDateAvailability)
-                .where(PlanDateAvailability.plan_id == plan_id)
-                .order_by(PlanDateAvailability.date.asc())
-            )
+        await session.execute(
+            select(PlanDateAvailability, User)
+            .join(User, User.id == PlanDateAvailability.user_id)
+            .where(PlanDateAvailability.plan_id == plan_id)
+            .order_by(PlanDateAvailability.date.asc(), User.display_name.asc())
         )
-        .scalars()
-        .all()
-    )
+    ).all()
     date_suggestions = (
         await session.execute(
             select(PlanDateSuggestion, User)
@@ -761,9 +758,11 @@ async def resync_plan(
             {
                 "date": availability.date.isoformat(),
                 "status": availability.status,
+                "user_id": str(availability.user_id),
+                "member_display_name": member.display_name,
                 "is_current_user": availability.user_id == membership.user_id,
             }
-            for availability in availability_rows
+            for availability, member in availability_rows
         ],
         date_suggestions=date_suggestion_rows,
         plan_suggestions=[

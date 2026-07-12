@@ -1,4 +1,5 @@
 import React from "react";
+import { readFileSync } from "node:fs";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -171,6 +172,22 @@ describe("Phase 1B.5 planning UI", () => {
     await waitFor(() => expect(resyncPlan).toHaveBeenCalledTimes(2));
   });
 
+  it("adds an activity to the itinerary through the existing idempotent item endpoint and resyncs", async () => {
+    await renderPlan();
+    const activity = screen.getByRole("heading", { name: "Kayaking" }).closest("article")!;
+    fireEvent.click(within(activity).getByRole("button", { name: "Add to itinerary" }));
+    await waitFor(() => expect(createItineraryItem).toHaveBeenCalledWith("app-jwt", "plan-1", {
+      title: "Kayaking", activity_id: "activity-1", client_operation_id: "operation-id"
+    }));
+    await waitFor(() => expect(resyncPlan).toHaveBeenCalledTimes(2));
+
+    cleanup();
+    const alreadyAdded = snapshot();
+    alreadyAdded.itinerary_items[0].activity_id = "activity-1";
+    await renderPlan(alreadyAdded);
+    expect(screen.getByRole("button", { name: "In itinerary" }).hasAttribute("disabled")).toBe(true);
+  });
+
   it("orders itinerary items and sends current versions and neighbor contracts", async () => {
     await renderPlan();
     fireEvent.change(screen.getByLabelText("Item"), { target: { value: "Third" } });
@@ -235,7 +252,8 @@ describe("Phase 1B.5 planning UI", () => {
     const owner = snapshot();
     owner.members.push({ id: "pm-3", plan_id: "plan-1", user_id: "user-3", role: "co_owner", display_name: "Co Owner", created_at: "2026-02-03" });
     await renderPlan(owner);
-    expect(screen.getAllByText("Co Owner")[0].closest("article")?.textContent).toContain("co-ownerJoined Feb 3, 2026");
+    expect(screen.getAllByText("Co Owner")[0].closest("article")?.textContent).toContain("co-owner");
+    expect(screen.queryByText(/Joined Feb 3, 2026/)).toBeNull();
     expect(screen.getAllByRole("button", { name: "Demote" })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "Remove" })).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "Promote" }));
@@ -358,11 +376,97 @@ describe("Phase 1B.5 planning UI", () => {
     await renderPlan(next);
     expect(screen.getByRole("heading", { name: "Kayaking" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Expenses" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Expand Plan ideas" }));
     fireEvent.change(screen.getByLabelText("Proposed plan name"), { target: { value: "Desert weekend" } });
     fireEvent.click(screen.getByRole("button", { name: "Suggest a different trip" }));
     await waitFor(() => expect(createPlanSuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", expect.objectContaining({ title: "Desert weekend", client_operation_id: "operation-id" })));
     fireEvent.click(screen.getByRole("button", { name: "Adopt this plan idea" }));
     await waitFor(() => expect(decidePlanSuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", "plan-idea", "accept", 4, "operation-id"));
     await waitFor(() => expect(resyncPlan).toHaveBeenCalledTimes(3));
+  });
+
+  it("renders authoritative transport facts read-only for members and updates them after resync", async () => {
+    const member = snapshot("member");
+    member.plan.travel_mode = "train";
+    member.plan.travel_duration_minutes = 125;
+    await renderPlan(member);
+    const overview = screen.getByLabelText("Plan overview");
+    expect(overview.textContent).toContain("TransportationTrain");
+    expect(overview.textContent).toContain("Travel duration2h 5m");
+    expect(screen.queryByRole("button", { name: "Edit settings" })).toBeNull();
+
+    const refreshed = snapshot("member");
+    refreshed.plan.travel_mode = "plane";
+    refreshed.plan.travel_duration_minutes = 200;
+    const callbacks = vi.mocked(usePlanSocket).mock.calls[0][0];
+    act(() => callbacks.onSnapshot(refreshed));
+    expect(overview.textContent).toContain("TransportationPlane");
+    expect(overview.textContent).toContain("Travel duration3h 20m");
+  });
+
+  it("collapses the major plan sections while preserving their summaries and disclosure semantics", async () => {
+    const next = snapshot();
+    next.date_suggestions = [{ id: "date-1", starts_on: "2026-08-02", ends_on: "2026-08-03", message: null, status: "accepted", author_id: "user-2", author_display_name: "Member", yes_votes: 1, maybe_votes: 0, no_votes: 0, vote: null }];
+    next.plan_suggestions = [{ id: "plan-idea", title: "Mountain weekend", description: null, starts_on: null, ends_on: null, budget_cents: null, max_drive_minutes: null, travel_mode: null, travel_duration_minutes: null, status: "open", author_id: "user-2", author_display_name: "Member", created_at: "2026-01-01" }];
+    await renderPlan(next);
+
+    expect(screen.getByText("Accepted dates ready.")).toBeTruthy();
+    expect(screen.getByText("1 open suggestion.")).toBeTruthy();
+    for (const title of ["Travel window", "Travel-window poll", "Trip ideas", "Trip members", "Expenses"]) {
+      const button = screen.getByRole("button", { name: `Collapse ${title}` });
+      expect(button.getAttribute("aria-expanded")).toBe("true");
+      fireEvent.click(button);
+      expect(button.getAttribute("aria-expanded")).toBe("false");
+      expect(screen.getByRole("button", { name: `Expand ${title}` })).toBeTruthy();
+    }
+    const planIdeas = screen.getByRole("button", { name: "Expand Plan ideas" });
+    fireEvent.click(planIdeas);
+    expect(screen.getByRole("button", { name: "Collapse Plan ideas" }).getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Plan ideas" }));
+    const members = screen.getByRole("button", { name: "Expand Trip members" });
+    fireEvent.keyDown(members, { key: "Enter" });
+    expect(screen.getByRole("button", { name: "Collapse Trip members" }).getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("renders the availability map from authoritative dates, suggestions, and member responses", async () => {
+    const next = snapshot();
+    next.plan.starts_on = "2026-08-01T00:00:00Z";
+    next.plan.ends_on = "2026-08-03T00:00:00Z";
+    next.date_availability = [
+      { date: "2026-08-01", status: "available", user_id: "user-1", member_display_name: "Owner", is_current_user: true },
+      { date: "2026-08-01", status: "maybe", user_id: "user-2", member_display_name: "Member", is_current_user: false }
+    ];
+    next.date_suggestions = [
+      { id: "accepted", starts_on: "2026-08-01", ends_on: "2026-08-02", message: null, status: "accepted", author_id: "user-2", author_display_name: "Member", yes_votes: 3, maybe_votes: 0, no_votes: 0, vote: null, created_at: "2026-01-01" },
+      { id: "open", starts_on: "2026-08-04", ends_on: "2026-08-05", message: null, status: "open", author_id: "user-2", author_display_name: "Member", yes_votes: 2, maybe_votes: 1, no_votes: 0, vote: null, created_at: "2026-01-02" }
+    ];
+    await renderPlan(next);
+    expect(screen.getByRole("heading", { name: "Group availability" })).toBeTruthy();
+    expect(screen.getByText("Leading option").parentElement?.textContent).toContain("Aug 4 – Aug 5");
+    expect(screen.getByLabelText(/Saturday, August 1, 2026: accepted trip date, 1 available, 1 maybe, 0 unavailable, 0 no response/)).toBeTruthy();
+    expect(screen.getByText("Accepted trip date")).toBeTruthy();
+    expect(screen.getByText("No response")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(/Saturday, August 1, 2026/));
+    expect(screen.getByRole("heading", { name: "Availability for Saturday, August 1, 2026" })).toBeTruthy();
+    expect(screen.getByText("✓ Available")).toBeTruthy();
+    expect(screen.getByText("~ Maybe")).toBeTruthy();
+  });
+
+  it("keeps the calendar useful for a single date, month boundary, and no responses", async () => {
+    const next = snapshot();
+    next.plan.starts_on = "2026-08-31T00:00:00Z";
+    next.plan.ends_on = "2026-08-31T00:00:00Z";
+    next.date_availability = [];
+    next.date_suggestions = [{ id: "cross-month", starts_on: "2026-08-31", ends_on: "2026-09-02", message: null, status: "open", author_id: "user-2", author_display_name: "Member", yes_votes: 0, maybe_votes: 0, no_votes: 0, vote: null, created_at: "2026-01-01" }];
+    await renderPlan(next);
+    expect(screen.getByRole("region", { name: "August 2026" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "September 2026" })).toBeTruthy();
+    expect(screen.getByLabelText(/Monday, August 31, 2026: proposed trip date, 0 available, 0 maybe, 0 unavailable, 2 no response/)).toBeTruthy();
+  });
+
+  it("keeps disclosure-state feedback when reduced motion is requested", () => {
+    const styles = readFileSync("src/app/globals.css", "utf8");
+    expect(styles).toContain(".disclosure-toggle[aria-expanded=\"false\"] .disclosure-chevron");
+    expect(styles).toContain("@media (prefers-reduced-motion: reduce)");
   });
 });
