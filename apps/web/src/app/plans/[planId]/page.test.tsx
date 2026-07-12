@@ -529,8 +529,11 @@ describe("Phase 1B.5 planning UI", () => {
     expect(styles).toContain(".disclosure-toggle[aria-expanded=\"false\"] .disclosure-chevron");
     expect(styles).toContain("@media (prefers-reduced-motion: reduce)");
     expect(styles).toContain("pointer-events: none");
-    expect(styles).toContain("overflow-x: hidden");
-    expect(styles).toContain("adventure-orbit");
+    expect(styles).toContain(".adventure-background, .adventure-background i { position: fixed; inset: 0; z-index: 0; pointer-events: none; }");
+    expect(styles).toContain(".app-shell { position: relative; z-index: 1;");
+    expect(styles).not.toContain("overflow-x: hidden");
+    expect(styles).not.toContain("adventure-orbit");
+    expect(styles).not.toContain("hue-rotate");
   });
 
   it("keeps owner and member date-poll selections isolated through realtime resync while totals match", async () => {

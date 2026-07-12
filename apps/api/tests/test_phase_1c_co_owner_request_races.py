@@ -1,14 +1,17 @@
 """Real-PostgreSQL terminal-state and rollback coverage for co-owner requests."""
 
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.db.base import AsyncSessionLocal
 from app.models.coordination import CoOwnerRequest
+from app.models.event import PlanEvent
+from app.models.idempotency import IdempotencyRecord
 from app.models.plan import PlanMember
 from app.realtime.connection_manager import connection_manager
 from test_phase_1a5 import bearer, client_context, create_plan, sync_user
@@ -54,6 +57,79 @@ def _race(*calls):
 
     with ThreadPoolExecutor(max_workers=len(calls)) as executor:
         return list(executor.map(run, calls))
+
+
+async def _removal_race_state(
+    plan_id: str, request_id: str, member_id: str, operation_ids: set[str]
+) -> dict:
+    plan_uuid = UUID(plan_id)
+    request_uuid = UUID(request_id)
+    member_uuid = UUID(member_id)
+    async with AsyncSessionLocal() as session:
+        request = (
+            await session.execute(select(CoOwnerRequest).where(CoOwnerRequest.id == request_uuid))
+        ).scalar_one()
+        membership = (
+            await session.execute(
+                select(PlanMember).where(
+                    PlanMember.plan_id == plan_uuid,
+                    PlanMember.user_id == member_uuid,
+                )
+            )
+        ).scalar_one_or_none()
+        events = (
+            (
+                await session.execute(
+                    select(PlanEvent)
+                    .where(
+                        PlanEvent.plan_id == plan_uuid,
+                        PlanEvent.event_type.in_(
+                            {
+                                "co_owner_request.approved",
+                                "member.role_updated",
+                                "member.removed",
+                            }
+                        ),
+                    )
+                    .order_by(PlanEvent.created_at, PlanEvent.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        operations = (
+            (
+                await session.execute(
+                    select(IdempotencyRecord).where(
+                        IdempotencyRecord.plan_id == plan_uuid,
+                        IdempotencyRecord.client_operation_id.in_(operation_ids),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        pending_count = await session.scalar(
+            select(func.count())
+            .select_from(CoOwnerRequest)
+            .where(
+                CoOwnerRequest.plan_id == plan_uuid,
+                CoOwnerRequest.requester_user_id == member_uuid,
+                CoOwnerRequest.status == "pending",
+            )
+        )
+        return {
+            "request_status": request.status,
+            "request_version": request.version,
+            "membership_role": membership.role if membership else None,
+            "event_types": [event.event_type for event in events],
+            "event_operation_ids": [event.client_operation_id for event in events],
+            "operations": {
+                operation.client_operation_id: (operation.status, operation.response_status)
+                for operation in operations
+            },
+            "pending_count": pending_count,
+        }
 
 
 def test_co_owner_request_approve_vs_deny_has_exactly_one_terminal_outcome() -> None:
@@ -112,32 +188,85 @@ def test_co_owner_request_approve_vs_withdrawal_has_exactly_one_terminal_outcome
     assert terminal in {"approved", "withdrawn"}
 
 
-def test_co_owner_request_approve_vs_member_removal_has_exactly_one_terminal_outcome() -> None:
+def test_co_owner_request_approve_vs_member_removal_has_exactly_one_terminal_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    broadcasts: list[tuple[UUID, dict]] = []
+
+    async def record_broadcast(plan_id: UUID, payload: dict) -> None:
+        broadcasts.append((plan_id, payload))
+
+    monkeypatch.setattr(connection_manager, "broadcast", record_broadcast)
     with client_context() as client:
         owner_jwt, plan_id = create_plan(client, f"owner-{uuid4()}")
         member_jwt, member_id = _join(client, owner_jwt, plan_id)
         request = _request(client, member_jwt, plan_id)
+        broadcasts.clear()
+        approval_operation_id = str(uuid4())
+        removal_operation_id = str(uuid4())
         codes = _race(
             lambda: (
                 client.post(
                     f"/plans/{plan_id}/co-owner-requests/{request['id']}/approve",
-                    json={"expected_version": 1, "client_operation_id": str(uuid4())},
+                    json={
+                        "expected_version": 1,
+                        "client_operation_id": approval_operation_id,
+                    },
                     headers=bearer(owner_jwt),
                 ).status_code
             ),
             lambda: (
                 client.delete(
-                    f"/plans/{plan_id}/members/{member_id}?client_operation_id={uuid4()}",
+                    f"/plans/{plan_id}/members/{member_id}"
+                    f"?client_operation_id={removal_operation_id}",
                     headers=bearer(owner_jwt),
                 ).status_code
             ),
         )
         snapshot = client.get(f"/plans/{plan_id}/resync", headers=bearer(owner_jwt)).json()
-        terminal = _terminal_status(client, owner_jwt, plan_id, request["id"])
+        state = client.portal.call(
+            lambda: _removal_race_state(
+                plan_id,
+                request["id"],
+                member_id,
+                {approval_operation_id, removal_operation_id},
+            )
+        )
 
-    assert sorted(codes) == [200, 204]
-    assert terminal in {"approved", "withdrawn"}
-    assert sum(member["user_id"] == member_id for member in snapshot["members"]) in {0, 1}
+    assert tuple(codes) in {(200, 204), (409, 204)}
+    assert all(member["user_id"] != member_id for member in snapshot["members"])
+    assert state["membership_role"] is None
+    assert state["pending_count"] == 0
+    assert state["request_version"] == 2
+    assert state["operations"][removal_operation_id] == ("completed", 204)
+
+    if codes[0] == 200:
+        assert state["request_status"] == "approved"
+        assert Counter(state["event_types"]) == Counter(
+            {
+                "co_owner_request.approved": 1,
+                "member.role_updated": 1,
+                "member.removed": 1,
+            }
+        )
+        assert Counter(state["event_operation_ids"]) == Counter(
+            {approval_operation_id: 2, removal_operation_id: 1}
+        )
+        assert state["operations"][approval_operation_id] == ("completed", 200)
+    else:
+        assert state["request_status"] == "withdrawn"
+        assert state["event_types"] == ["member.removed"]
+        assert state["event_operation_ids"] == [removal_operation_id]
+        assert approval_operation_id not in state["operations"]
+
+    assert Counter(payload["event_type"] for _, payload in broadcasts) == Counter(
+        state["event_types"]
+    )
+    plan_uuid = UUID(plan_id)
+    assert all(broadcast_plan_id == plan_uuid for broadcast_plan_id, _ in broadcasts)
+    assert plan_uuid not in connection_manager.active_rooms
+    assert all(key[0] != plan_uuid for key in connection_manager._debounced_tasks)
+    assert plan_uuid not in connection_manager._event_sequences
 
 
 def test_co_owner_request_duplicate_approval_replays_once_and_duplicate_pending_is_rejected() -> (

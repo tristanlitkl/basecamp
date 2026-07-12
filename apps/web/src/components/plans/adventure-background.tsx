@@ -12,9 +12,7 @@ export function AdventureBackground() {
       frame = 0;
       const max = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1);
       const progress = Math.min(Math.max(window.scrollY / max, 0), 1);
-      document.documentElement.style.setProperty("--adventure-progress", progress.toFixed(4));
       document.documentElement.style.setProperty("--adventure-scroll", `${progress * 42}px`);
-      document.documentElement.style.setProperty("--adventure-hue", `${progress * 42}deg`);
     };
     const onScroll = () => { if (!frame) frame = window.requestAnimationFrame(update); };
     update();
@@ -23,10 +21,8 @@ export function AdventureBackground() {
       window.removeEventListener("scroll", onScroll);
       if (frame) window.cancelAnimationFrame(frame);
       document.documentElement.style.removeProperty("--adventure-scroll");
-      document.documentElement.style.removeProperty("--adventure-progress");
-      document.documentElement.style.removeProperty("--adventure-hue");
     };
   }, []);
 
-  return <div aria-hidden="true" className="adventure-background"><i className="adventure-aurora" /><i className="adventure-contours" /><i className="adventure-route" /><i className="adventure-orbit" /></div>;
+  return <div aria-hidden="true" className="adventure-background"><i className="adventure-aurora" /><i className="adventure-contours" /><i className="adventure-route" /></div>;
 }
