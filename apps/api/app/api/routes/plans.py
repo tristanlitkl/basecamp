@@ -684,6 +684,14 @@ async def resync_plan(
         activities=[
             {
                 **activity_dict(activity),
+                "current_user_vote": next(
+                    (
+                        vote.vote
+                        for vote in votes
+                        if vote.activity_id == activity.id and vote.user_id == membership.user_id
+                    ),
+                    None,
+                ),
                 "creator_display_name": creator_names.get(
                     str(activity.created_by_user_id), "Former member"
                 ),
@@ -707,11 +715,7 @@ async def resync_plan(
             }
             for item in itinerary_items
         ],
-        votes=[
-            vote_dict(vote)
-            for vote in votes
-            if plan.vote_visibility == "public" or vote.user_id == membership.user_id
-        ],
+        votes=[vote_dict(vote) for vote in votes if plan.vote_visibility == "public"],
         expenses=[
             {
                 "id": str(expense.id),

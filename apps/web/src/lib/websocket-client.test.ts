@@ -60,6 +60,7 @@ describe("snapshotToPlanDetail", () => {
           tags: [],
           notes: null,
           vote: null,
+          current_user_vote: "yes",
           yes_votes: 0,
           maybe_votes: 0,
           no_votes: 0
@@ -67,7 +68,7 @@ describe("snapshotToPlanDetail", () => {
       ],
       activity_scores: { "activity-1": { yes: 2, maybe: 1, no: 0 } },
       itinerary_items: [],
-      votes: [{ activity_id: "activity-1", vote: "yes" }],
+      votes: [{ activity_id: "activity-1", vote: "no" }],
       expenses: [],
       expense_splits: [],
       ledger_entries: [],

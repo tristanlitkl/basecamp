@@ -283,7 +283,7 @@ describe("Phase 1B.5 planning UI", () => {
     await renderPlan(publicSnapshot);
     expect(screen.getByText("Votes: Member (yes)")).toBeTruthy();
     cleanup();
-    const anonymous = snapshot("member"); anonymous.plan.vote_visibility = "anonymous"; anonymous.activities[0].vote = "yes"; anonymous.activity_scores["activity-1"].yes = 2; anonymous.votes = [{ activity_id: "activity-1", user_id: "user-1", vote: "yes" }];
+    const anonymous = snapshot("member"); anonymous.plan.vote_visibility = "anonymous"; anonymous.activities[0].current_user_vote = "yes"; anonymous.activity_scores["activity-1"].yes = 2; anonymous.votes = [];
     await renderPlan(anonymous);
     expect(screen.getByRole("heading", { name: "Kayaking" }).closest("article")?.textContent).toContain("Yes 2");
     expect(screen.getByText(/Votes are anonymous/)).toBeTruthy();
@@ -528,6 +528,9 @@ describe("Phase 1B.5 planning UI", () => {
     const styles = readFileSync("src/app/globals.css", "utf8");
     expect(styles).toContain(".disclosure-toggle[aria-expanded=\"false\"] .disclosure-chevron");
     expect(styles).toContain("@media (prefers-reduced-motion: reduce)");
+    expect(styles).toContain("pointer-events: none");
+    expect(styles).toContain("overflow-x: hidden");
+    expect(styles).toContain("adventure-orbit");
   });
 
   it("keeps owner and member date-poll selections isolated through realtime resync while totals match", async () => {
@@ -551,6 +554,28 @@ describe("Phase 1B.5 planning UI", () => {
     expect(screen.getByRole("button", { name: /Vote yes for Oct 1/ }).getAttribute("aria-pressed")).toBe("false");
     expect(screen.getByRole("button", { name: /Vote yes for Oct 1/ }).textContent).toContain("1");
     expect(screen.getByRole("button", { name: /Vote no for Oct 1/ }).textContent).toContain("1");
+  });
+
+  it("keeps activity vote selection viewer-specific through invalidation and authoritative resync", async () => {
+    const owner = snapshot();
+    owner.activities[0].yes_votes = 1;
+    owner.activities[0].no_votes = 1;
+    owner.activities[0].current_user_vote = "yes";
+    owner.activity_scores["activity-1"] = { yes: 1, maybe: 0, no: 1 };
+    await renderPlan(owner);
+    expect(screen.getByRole("button", { name: "Vote yes" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Vote no" }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByText("Yes 1 · Maybe 0 · No 1")).toBeTruthy();
+
+    const member = structuredClone(owner);
+    member.current_user_id = "user-2";
+    member.plan.role = "member";
+    member.activities[0].current_user_vote = "no";
+    vi.mocked(resyncPlan).mockResolvedValue(member);
+    await act(async () => { await vi.mocked(usePlanSocket).mock.calls[0][0].onPlanEvent?.(); });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Vote no" }).getAttribute("aria-pressed")).toBe("true"));
+    expect(screen.getByRole("button", { name: "Vote yes" }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByText("Yes 1 · Maybe 0 · No 1")).toBeTruthy();
   });
 
   it("opens a focus-managed Trip Members modal with plain emoji, overflow, role actions, confirmation, and request workflows", async () => {

@@ -11,7 +11,7 @@ describe("AdventureBackground", () => {
     const addEventListener = vi.spyOn(window, "addEventListener");
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true })));
     const { container } = render(<AdventureBackground />);
-    expect(container.querySelectorAll(".adventure-background i")).toHaveLength(3);
+    expect(container.querySelectorAll(".adventure-background i")).toHaveLength(4);
     expect(addEventListener).not.toHaveBeenCalledWith("scroll", expect.anything(), expect.anything());
   });
 });

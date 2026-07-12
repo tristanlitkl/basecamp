@@ -29,6 +29,19 @@ def test_unsupported_or_unauthenticated_avatar_updates_are_rejected() -> None:
     assert unauthenticated.status_code == 401
 
 
+def test_curated_people_skin_tone_and_gendered_avatar_emojis_are_accepted() -> None:
+    with client_context() as client:
+        jwt = sync_user(client, f"owner-{uuid4()}")
+        people = client.patch("/auth/me", json={"avatar_emoji": "👩"}, headers=bearer(jwt))
+        skin_tone = client.patch("/auth/me", json={"avatar_emoji": "👨🏾"}, headers=bearer(jwt))
+        gendered = client.patch("/auth/me", json={"avatar_emoji": "🧑‍💻"}, headers=bearer(jwt))
+        unsupported = client.patch("/auth/me", json={"avatar_emoji": "person"}, headers=bearer(jwt))
+
+    assert people.status_code == skin_tone.status_code == gendered.status_code == 200
+    assert gendered.json()["avatar_emoji"] == "🧑‍💻"
+    assert unsupported.status_code == 422
+
+
 def test_user_cannot_change_another_users_emoji_via_current_user_endpoint() -> None:
     with client_context() as client:
         first_jwt = sync_user(client, f"first-{uuid4()}")

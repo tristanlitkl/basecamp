@@ -26,4 +26,14 @@ describe("EmojiPicker", () => {
     fireEvent.click(screen.getByRole("button", { name: "Choose expression 😎 emoji" }));
     expect(onChange).toHaveBeenCalledWith("😎");
   });
+
+  it("renders inclusive people options and selects a supported multi-codepoint avatar", () => {
+    const onChange = vi.fn();
+    render(<EmojiPicker onChange={onChange} value="🧭" />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "People" }));
+    expect(screen.getByRole("button", { name: "Choose person 👨🏾 emoji" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Choose person 🧑‍💻 emoji" }));
+    expect(onChange).toHaveBeenCalledWith("🧑‍💻");
+  });
 });

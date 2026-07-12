@@ -38,6 +38,7 @@ export type ActivitySummary = {
   yes_votes: number;
   no_votes: number;
   maybe_votes: number;
+  current_user_vote?: "yes" | "maybe" | "no" | null;
 };
 
 export type ItineraryItem = {
