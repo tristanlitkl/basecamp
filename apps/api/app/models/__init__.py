@@ -1,7 +1,7 @@
 """Basecamp SQLAlchemy models."""
 
 from app.models.activity import Activity
-from app.models.coordination import ActivityComment, ActivitySuggestion
+from app.models.coordination import ActivityComment, ActivitySuggestion, CoOwnerRequest
 from app.models.expense import Expense, ExpenseSplit
 from app.models.invite import PlanInvite
 from app.models.idempotency import IdempotencyRecord
@@ -23,6 +23,7 @@ __all__ = [
     "Activity",
     "ActivityComment",
     "ActivitySuggestion",
+    "CoOwnerRequest",
     "ActivityVote",
     "Expense",
     "ExpenseSplit",

@@ -118,7 +118,8 @@ export type DateAvailability = {
   member_avatar_emoji?: string;
   is_current_user: boolean;
 };
-export type DateSuggestion = { id: string; starts_on: string; ends_on: string; message: string | null; status: "open" | "accepted" | "dismissed" | "archived"; author_id: string; author_display_name: string; author_avatar_emoji?: string; yes_votes: number; maybe_votes: number; no_votes: number; vote: "yes" | "maybe" | "no" | null; created_at?: string };
+export type DateSuggestion = { id: string; starts_on: string; ends_on: string; message: string | null; status: "open" | "accepted" | "dismissed" | "archived"; author_id: string; author_display_name: string; author_avatar_emoji?: string; yes_votes: number; maybe_votes: number; no_votes: number; current_user_vote: "yes" | "maybe" | "no" | null; created_at?: string };
+export type CoOwnerRequest = { id: string; plan_id: string; requester_user_id: string; requester_display_name: string; requester_avatar_emoji?: string; status: "pending" | "approved" | "denied" | "withdrawn"; note: string | null; version: number; decided_by_user_id: string | null; decided_at: string | null; created_at: string; updated_at: string };
 export type PlanSuggestion = { id: string; title: string; description: string | null; starts_on: string | null; ends_on: string | null; budget_cents: number | null; max_drive_minutes: number | null; travel_mode: "car" | "plane" | "train" | "bus" | null; travel_duration_minutes: number | null; status: "open" | "accepted" | "dismissed" | "archived"; author_id: string; author_display_name: string; author_avatar_emoji?: string; created_at: string };
 export type PlanEvent = {
   id: string;
@@ -149,6 +150,7 @@ export type ResyncSnapshot = {
   date_availability: DateAvailability[];
   date_suggestions: DateSuggestion[];
   plan_suggestions?: PlanSuggestion[];
+  co_owner_requests?: CoOwnerRequest[];
   server_version: number;
 };
 

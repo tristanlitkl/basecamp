@@ -4,7 +4,7 @@ import { signIn, signOut, useSession } from "next-auth/react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import React from "react";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 import {
   ApiError,
@@ -22,6 +22,8 @@ import {
   deleteExpense,
   deleteItineraryItem,
   changeMemberRole,
+  createCoOwnerRequest,
+  decideCoOwnerRequest,
   decideActivitySuggestion,
   decideDateSuggestion,
   decidePlanSuggestion,
@@ -40,7 +42,8 @@ import {
   updateVoteVisibility,
   upsertDateAvailability,
   voteActivity,
-  voteDateSuggestion
+  voteDateSuggestion,
+  withdrawCoOwnerRequest
 } from "@/lib/api-client";
 import { formatCents, parseDollarCents } from "@/lib/money";
 import { connectionLabel } from "@/hooks/useConnectionStatus";
@@ -84,21 +87,34 @@ function initials(name: string) {
   return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "?";
 }
 
-function TripMembersCard({ members, currentUserId }: { members: ResyncSnapshot["members"]; currentUserId: string }) {
+function TripMembersCard({
+  members, currentUserId, role, requests = [], disabled, onChangeRole, onRemove, onRequest, onWithdraw, onDecision
+}: {
+  members: ResyncSnapshot["members"]; currentUserId: string; role: PlanDetail["role"];
+  requests?: NonNullable<ResyncSnapshot["co_owner_requests"]>; disabled: boolean;
+  onChangeRole: (userId: string, nextRole: "co_owner" | "member") => void;
+  onRemove: (userId: string) => void; onRequest: () => void; onWithdraw: (requestId: string, version: number) => void;
+  onDecision: (requestId: string, decision: "approve" | "deny", version: number) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const sortedMembers = sortMembers(members);
-  return <div className="card stat trip-members-stat">
-    <button aria-controls="trip-members-directory" aria-expanded={expanded} className="trip-members-trigger" onClick={() => setExpanded((open) => !open)} type="button">
+  const ownRequest = requests.find((request) => request.requester_user_id === currentUserId);
+  const pendingRequests = requests.filter((request) => request.status === "pending");
+  const close = () => { setExpanded(false); requestAnimationFrame(() => triggerRef.current?.focus()); };
+  return <div className="card stat trip-members-stat" onKeyDown={(event) => { if (event.key === "Escape" && expanded) { event.preventDefault(); close(); } }}>
+    <button ref={triggerRef} aria-controls="trip-members-directory" aria-expanded={expanded} className="trip-members-trigger" onClick={() => setExpanded((open) => !open)} type="button">
       <span><i aria-hidden="true">◉</i> Trip members</span>
-      <span className="trip-member-avatars" aria-label={`${sortedMembers.length} trip members`}>
-        {sortedMembers.slice(0, 5).map((member) => <span aria-label={member.display_name} className="member-emoji-avatar" key={member.user_id} role="img">{avatarEmoji(member.avatar_emoji)}</span>)}
-        {sortedMembers.length > 5 && <span className="member-overflow member-overflow-desktop" aria-label={`Show ${sortedMembers.length - 5} more members`}>+{sortedMembers.length - 5}</span>}
-        {sortedMembers.length > 3 && <span className="member-overflow member-overflow-mobile" aria-label={`Show ${sortedMembers.length - 3} more members`}>+{sortedMembers.length - 3}</span>}
+      <span className="trip-member-preview" aria-label={`${sortedMembers.length} trip members`}>
+        {sortedMembers.slice(0, 3).map((member) => <span className="member-preview" key={member.user_id}><span aria-hidden="true">{avatarEmoji(member.avatar_emoji)}</span><span>{member.display_name}</span></span>)}
+        {sortedMembers.length > 3 && <span className="member-overflow" aria-label={`${sortedMembers.length - 3} more members`}>+{sortedMembers.length - 3} more</span>}
       </span>
     </button>
-    {expanded && <div className="trip-members-popover" id="trip-members-directory" role="dialog" aria-label="Trip member directory">
-      <div className="split"><strong>Trip members</strong><button className="btn btn-quiet" onClick={() => setExpanded(false)} type="button">Close</button></div>
-      <ul>{sortedMembers.map((member) => <li key={member.user_id}><span className="member-emoji-avatar" aria-hidden="true">{avatarEmoji(member.avatar_emoji)}</span><span className="member-directory-name"><strong>{member.display_name}</strong>{member.user_id === currentUserId && <small>You</small>}</span><span className={`badge badge-${member.role}`}>{member.role.replace("_", "-")}</span></li>)}</ul>
+    {expanded && <div className="trip-members-popover" id="trip-members-directory" role="dialog" aria-modal="false" aria-label="Trip Members">
+      <div className="split"><strong>Trip Members</strong><button aria-label="Close trip members" className="member-panel-close" onClick={close} type="button">×</button></div>
+      <div className="trip-members-list">{sortedMembers.map((member) => <article className="member-panel-row" key={member.user_id}><span className="member-plain-emoji" aria-hidden="true">{avatarEmoji(member.avatar_emoji)}</span><span className="member-directory-name"><strong>{member.display_name}</strong>{member.user_id === currentUserId && <small>You</small>}</span><span className={`badge badge-${member.role}`}>{member.role.replace("_", "-")}</span>{role === "owner" && member.role !== "owner" && member.user_id !== currentUserId && <span className="member-actions"><button className="btn btn-secondary" disabled={disabled} onClick={() => onChangeRole(member.user_id, member.role === "co_owner" ? "member" : "co_owner")}>{member.role === "co_owner" ? "Demote to member" : "Promote to co-owner"}</button><button className="btn btn-danger" disabled={disabled} onClick={() => onRemove(member.user_id)}>Remove from trip</button></span>}{role === "co_owner" && member.role === "member" && member.user_id !== currentUserId && <span className="member-actions"><button className="btn btn-danger" disabled={disabled} onClick={() => onRemove(member.user_id)}>Remove from trip</button></span>}</article>)}</div>
+      {role === "member" && <div className="co-owner-request-panel"><strong>Co-owner access</strong>{ownRequest?.status === "pending" ? <div className="cluster"><span className="muted small">Request pending</span><button className="btn btn-secondary" disabled={disabled} onClick={() => onWithdraw(ownRequest.id, ownRequest.version)}>Withdraw request</button></div> : <><p className="muted small">Ask the primary owner for help managing this trip.</p><button className="btn btn-secondary" disabled={disabled} onClick={onRequest}>Request co-owner access</button>{ownRequest && <p className="muted small">Latest request: {ownRequest.status}</p>}</>}</div>}
+      {role === "owner" && <div className="co-owner-request-panel"><strong>Co-owner requests</strong>{pendingRequests.length === 0 ? <p className="muted small">No pending requests.</p> : pendingRequests.map((request) => <div className="co-owner-request-row" key={request.id}><span className="member-plain-emoji" aria-hidden="true">{avatarEmoji(request.requester_avatar_emoji)}</span><span className="member-directory-name"><strong>{request.requester_display_name}</strong><small>{new Date(request.created_at).toLocaleDateString()} {request.note ? `· ${request.note}` : ""}</small></span><span className="member-actions"><button className="btn" disabled={disabled} onClick={() => onDecision(request.id, "approve", request.version)}>Approve</button><button className="btn btn-secondary" disabled={disabled} onClick={() => onDecision(request.id, "deny", request.version)}>Deny</button></span></div>)}</div>}
     </div>}
   </div>;
 }
@@ -327,10 +343,10 @@ export default function PlanPage() {
   snapshot.plan_suggestions ??= [];
   snapshot.date_suggestions ??= [];
   snapshot.date_availability ??= [];
+  snapshot.co_owner_requests ??= [];
   const disabled = finalized || pending;
   const canManage = plan.role === "owner" || plan.role === "co_owner";
   const itinerary = [...snapshot.itinerary_items].sort((left, right) => comparePositionKeys(left.position_key, right.position_key));
-  const sortedMembers = sortMembers(snapshot.members);
   const toggleParticipants = (userId: string, selected: string[], setSelected: (next: string[]) => void) =>
     setSelected(selected.includes(userId) ? selected.filter((id) => id !== userId) : [...selected, userId]);
   const startExpenseEdit = (expense: Expense) => {
@@ -369,16 +385,13 @@ export default function PlanPage() {
       <div className="card stat"><span><i aria-hidden="true">◷</i> Travel duration</span><strong>{readableDuration(plan.travel_duration_minutes)}</strong></div>
       <div className="card stat"><span><i aria-hidden="true">◇</i> Budget</span><strong>{plan.budget_cents === null ? "Not set" : formatCents(plan.budget_cents)}</strong></div>
       <div className="card stat"><span><i aria-hidden="true">◎</i> Travel group</span><strong>{snapshot.members.length}</strong></div>
-      <TripMembersCard currentUserId={snapshot.current_user_id} members={snapshot.members} />
+      <TripMembersCard currentUserId={snapshot.current_user_id} members={snapshot.members} role={plan.role} requests={snapshot.co_owner_requests} disabled={disabled} onChangeRole={(userId, role) => void mutate(() => changeMemberRole(session.appJwt!, planId, userId, role, crypto.randomUUID()))} onRemove={(userId) => void mutate(() => removeMember(session.appJwt!, planId, userId, crypto.randomUUID()))} onRequest={() => void mutate(() => createCoOwnerRequest(session.appJwt!, planId, null, crypto.randomUUID()))} onWithdraw={(requestId, version) => void mutate(() => withdrawCoOwnerRequest(session.appJwt!, planId, requestId, version, crypto.randomUUID()))} onDecision={(requestId, decision, version) => void mutate(() => decideCoOwnerRequest(session.appJwt!, planId, requestId, decision, version, crypto.randomUUID()))} />
     </section>
     {inviteToken && <div className="notice cluster"><strong>Invite ready:</strong><code>{typeof window === "undefined" ? inviteToken : `${window.location.origin}/invites/${inviteToken}`}</code></div>}
     <div className="page-grid"><div>
 
     <AvailabilityCalendar availability={snapshot.date_availability} members={snapshot.members} plan={plan} suggestions={snapshot.date_suggestions} />
 
-    <DisclosureSection id="trip-members" title="Trip members" summary={`${snapshot.members.length} ${snapshot.members.length === 1 ? "member" : "members"} coordinating this trip.`}>
-      {sortedMembers.map((member) => <article className="member-row" key={member.user_id}><span className="avatar" aria-hidden="true">{avatarEmoji(member.avatar_emoji)}</span><div><div className="member-meta"><strong>{member.display_name}</strong>{member.user_id === snapshot.current_user_id && <span className="badge">You</span>}<span className={`badge badge-${member.role}`}>{member.role.replace("_", "-")}</span></div></div>{plan.role === "owner" && member.role !== "owner" && member.user_id !== snapshot.current_user_id && <div className="member-actions"><button className="btn btn-secondary" disabled={disabled} onClick={() => void mutate(() => changeMemberRole(session.appJwt!, planId, member.user_id, member.role === "co_owner" ? "member" : "co_owner", crypto.randomUUID()))}>{member.role === "co_owner" ? "Demote" : "Promote"}</button><button className="btn btn-danger" disabled={disabled} onClick={() => { if (window.confirm(`Remove ${member.display_name}?`)) void mutate(() => removeMember(session.appJwt!, planId, member.user_id, crypto.randomUUID())); }}>Remove</button></div>}{plan.role === "co_owner" && member.role === "member" && member.user_id !== snapshot.current_user_id && <div className="member-actions"><button className="btn btn-danger" disabled={disabled} onClick={() => { if (window.confirm(`Remove ${member.display_name}?`)) void mutate(() => removeMember(session.appJwt!, planId, member.user_id, crypto.randomUUID())); }}>Remove</button></div>}</article>)}
-    </DisclosureSection>
 
     <section className="card section-card">
       <div className="section-heading"><div><h2>Trip parameters</h2><p className="muted small">{plan.budget_cents === null ? "No budget" : formatCents(plan.budget_cents)} · {readableDate(plan.starts_on)} – {readableDate(plan.ends_on)}</p></div>{canManage && <button className="btn btn-secondary" type="button" onClick={() => setShowConstraints((value) => !value)}>{showConstraints ? "Close settings" : "Edit settings"}</button>}</div>
@@ -446,7 +459,7 @@ export default function PlanPage() {
       <form className="stack subcard" onSubmit={(event) => { event.preventDefault(); if (availabilityDate) void mutate(() => upsertDateAvailability(session.appJwt!, planId, availabilityDate, availabilityStatus)); }}><label className="field">Date <input type="date" value={availabilityDate} onChange={(event) => setAvailabilityDate(event.target.value)} /></label><label className="field">Availability <select value={availabilityStatus} onChange={(event) => setAvailabilityStatus(event.target.value as typeof availabilityStatus)}><option value="available">Available</option><option value="maybe">Maybe</option><option value="unavailable">Unavailable</option></select></label><button className="btn" disabled={pending}>Save availability</button></form><form className="stack subcard" onSubmit={(event) => { event.preventDefault(); if (!dateSuggestionStart || !dateSuggestionEnd) { setError("Enter both a start and end date."); return; } if (dateSuggestionEnd < dateSuggestionStart) { setError("The end date must be on or after the start date."); return; } void mutate(() => createDateSuggestion(session.appJwt!, planId, dateSuggestionStart, dateSuggestionEnd, crypto.randomUUID())); }}><label className="field">Suggested start <input type="date" value={dateSuggestionStart} onChange={(event) => setDateSuggestionStart(event.target.value)} /></label><label className="field">Suggested end <input type="date" value={dateSuggestionEnd} onChange={(event) => setDateSuggestionEnd(event.target.value)} /></label><button className="btn btn-secondary" disabled={pending}>Suggest dates</button></form>
     </DisclosureSection>
     <DisclosureSection className="plan-ideas" id="travel-window-poll" title="Travel-window poll" summary={`${snapshot.date_suggestions.filter((suggestion) => suggestion.status === "open").length} open ${snapshot.date_suggestions.filter((suggestion) => suggestion.status === "open").length === 1 ? "option" : "options"}.`}>
-      <div className="stack">{[...snapshot.date_suggestions].filter((suggestion) => suggestion.status === "open").sort((a, b) => b.yes_votes - a.yes_votes || b.maybe_votes - a.maybe_votes || a.no_votes - b.no_votes || a.starts_on.localeCompare(b.starts_on) || (a.created_at ?? "").localeCompare(b.created_at ?? "")).map((suggestion) => <article className="poll-option" key={`poll-${suggestion.id}`}><div className="split"><div><strong>{readableDate(suggestion.starts_on)} – {readableDate(suggestion.ends_on)}</strong><p className="muted small">Created by {suggestion.author_display_name}</p></div>{canManage && <button className="btn btn-quiet" disabled={pending} onClick={() => void mutate(() => archiveDateSuggestion(session.appJwt!, planId, suggestion.id, crypto.randomUUID()), true)}>Remove option</button>}</div><div className="poll-votes">{(["yes", "maybe", "no"] as const).map((vote) => <button className={`vote-button ${vote} ${suggestion.vote === vote ? "selected" : ""}`} type="button" key={vote} aria-label={`Vote ${vote} for ${readableDate(suggestion.starts_on)}`} aria-pressed={suggestion.vote === vote} disabled={pending} onClick={() => void mutate(() => voteDateSuggestion(session.appJwt!, planId, suggestion.id, vote, crypto.randomUUID()))}><span aria-hidden="true">{vote === "yes" ? "✓" : vote === "maybe" ? "~" : "×"}</span><span>{vote === "yes" ? suggestion.yes_votes : vote === "maybe" ? suggestion.maybe_votes : suggestion.no_votes}</span></button>)}</div>{canManage && <div className="cluster"><button className="btn" disabled={disabled} onClick={() => void mutate(() => decideDateSuggestion(session.appJwt!, planId, suggestion.id, "accept", plan.version, crypto.randomUUID()))}>Accept</button><button className="btn btn-secondary" disabled={pending} onClick={() => void mutate(() => decideDateSuggestion(session.appJwt!, planId, suggestion.id, "dismiss", plan.version, crypto.randomUUID()))}>Dismiss</button></div>}</article>)}</div>
+      <div className="stack">{[...snapshot.date_suggestions].filter((suggestion) => suggestion.status === "open").sort((a, b) => b.yes_votes - a.yes_votes || b.maybe_votes - a.maybe_votes || a.no_votes - b.no_votes || a.starts_on.localeCompare(b.starts_on) || (a.created_at ?? "").localeCompare(b.created_at ?? "")).map((suggestion) => <article className="poll-option" key={`poll-${suggestion.id}`}><div className="split"><div><strong>{readableDate(suggestion.starts_on)} – {readableDate(suggestion.ends_on)}</strong><p className="muted small poll-suggester"><span aria-hidden="true">{avatarEmoji(suggestion.author_avatar_emoji)}</span> Suggested by {suggestion.author_display_name}</p></div>{canManage && <button className="btn btn-quiet" disabled={pending} onClick={() => void mutate(() => archiveDateSuggestion(session.appJwt!, planId, suggestion.id, crypto.randomUUID()), true)}>Remove option</button>}</div><div className="poll-votes">{(["yes", "maybe", "no"] as const).map((vote) => <button className={`vote-button ${vote} ${suggestion.current_user_vote === vote ? "selected" : ""}`} type="button" key={vote} aria-label={`Vote ${vote} for ${readableDate(suggestion.starts_on)}`} aria-pressed={suggestion.current_user_vote === vote} disabled={pending} onClick={() => void mutate(() => voteDateSuggestion(session.appJwt!, planId, suggestion.id, vote, crypto.randomUUID()))}><span aria-hidden="true">{vote === "yes" ? "✓" : vote === "maybe" ? "~" : "×"}</span><span>{vote === "yes" ? suggestion.yes_votes : vote === "maybe" ? suggestion.maybe_votes : suggestion.no_votes}</span></button>)}</div>{canManage && <div className="cluster"><button className="btn" disabled={disabled} onClick={() => void mutate(() => decideDateSuggestion(session.appJwt!, planId, suggestion.id, "accept", plan.version, crypto.randomUUID()))}>Accept</button><button className="btn btn-secondary" disabled={pending} onClick={() => void mutate(() => decideDateSuggestion(session.appJwt!, planId, suggestion.id, "dismiss", plan.version, crypto.randomUUID()))}>Dismiss</button></div>}</article>)}</div>
     </DisclosureSection>
     <DisclosureSection className="plan-ideas" defaultOpen={false} id="plan-ideas" title="Plan ideas" summary={`${snapshot.plan_suggestions.filter((suggestion) => suggestion.status === "open").length} open ${snapshot.plan_suggestions.filter((suggestion) => suggestion.status === "open").length === 1 ? "suggestion" : "suggestions"}.`}>
       <form className="stack subcard" onSubmit={(event) => { event.preventDefault(); if (!planSuggestionTitle.trim()) return; void mutate(() => createPlanSuggestion(session.appJwt!, planId, { title: planSuggestionTitle.trim(), description: planSuggestionDescription || null, client_operation_id: crypto.randomUUID() })); setPlanSuggestionTitle(""); setPlanSuggestionDescription(""); }}><label className="field">Proposed plan name <input value={planSuggestionTitle} onChange={(event) => setPlanSuggestionTitle(event.target.value)} required /></label><label className="field">Why this trip? <textarea value={planSuggestionDescription} onChange={(event) => setPlanSuggestionDescription(event.target.value)} /></label><button className="btn btn-secondary" disabled={pending}>Suggest a different trip</button></form><div className="stack" style={{ marginTop: 12 }}>{snapshot.plan_suggestions.filter((suggestion) => suggestion.status !== "archived").map((suggestion) => <article className="suggestion" key={suggestion.id}><div className="split"><div><strong>{suggestion.title}</strong><p className="muted small">Suggested by {suggestion.author_display_name}</p></div>{suggestion.status !== "open" && <span className="badge">{suggestion.status}</span>}</div>{suggestion.description && <p className="small">{suggestion.description}</p>}{canManage && suggestion.status === "open" && <div className="cluster"><button className="btn" disabled={disabled} onClick={() => { if (window.confirm("Adopt this plan idea? Only supported plan-level fields will change; activities and expenses are preserved.")) void mutate(() => decidePlanSuggestion(session.appJwt!, planId, suggestion.id, "accept", plan.version, crypto.randomUUID())); }}>Adopt this plan idea</button><button className="btn btn-secondary" disabled={pending} onClick={() => void mutate(() => decidePlanSuggestion(session.appJwt!, planId, suggestion.id, "dismiss", plan.version, crypto.randomUUID()))}>Dismiss</button></div>}{canManage && (suggestion.status === "accepted" || suggestion.status === "dismissed") && <button className="btn btn-quiet" disabled={pending} onClick={() => void mutate(() => archivePlanSuggestion(session.appJwt!, planId, suggestion.id, crypto.randomUUID()), true)}>Remove from history</button>}</article>)}</div>

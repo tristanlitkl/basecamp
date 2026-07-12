@@ -139,6 +139,15 @@ export function removeMember(token: string, planId: string, userId: string, clie
 export function updateVoteVisibility(token: string, planId: string, vote_visibility: "public" | "anonymous", expected_version: number) {
   return apiFetch(token, `/plans/${planId}/vote-visibility`, { method: "PATCH", body: { vote_visibility, expected_version } });
 }
+export function createCoOwnerRequest(token: string, planId: string, note: string | null, client_operation_id: string) {
+  return apiFetch(token, `/plans/${planId}/co-owner-requests`, { method: "POST", body: { note, client_operation_id } });
+}
+export function withdrawCoOwnerRequest(token: string, planId: string, requestId: string, expected_version: number, client_operation_id: string) {
+  return apiFetch(token, `/plans/${planId}/co-owner-requests/${requestId}/withdraw`, { method: "POST", body: { expected_version, client_operation_id } });
+}
+export function decideCoOwnerRequest(token: string, planId: string, requestId: string, decision: "approve" | "deny", expected_version: number, client_operation_id: string) {
+  return apiFetch(token, `/plans/${planId}/co-owner-requests/${requestId}/${decision}`, { method: "POST", body: { expected_version, client_operation_id } });
+}
 export function createComment(token: string, planId: string, activityId: string, body: string, client_operation_id: string) { return apiFetch(token, `/plans/${planId}/activities/${activityId}/comments`, { method: "POST", body: { body, client_operation_id } }); }
 export function patchComment(token: string, planId: string, activityId: string, commentId: string, body: string, expected_version: number) { return apiFetch(token, `/plans/${planId}/activities/${activityId}/comments/${commentId}`, { method: "PATCH", body: { body, expected_version } }); }
 export function deleteComment(token: string, planId: string, activityId: string, commentId: string): Promise<void> { return apiFetch(token, `/plans/${planId}/activities/${activityId}/comments/${commentId}`, { method: "DELETE" }); }

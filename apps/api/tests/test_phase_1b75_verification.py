@@ -586,7 +586,12 @@ def test_date_vote_upsert_keeps_one_vote_per_member_and_does_not_increment_plan_
         after = client.get(f"/plans/{plan_id}/resync", headers=bearer(member_jwt)).json()
 
     option = after["date_suggestions"][0]
-    assert (option["yes_votes"], option["maybe_votes"], option["no_votes"], option["vote"]) == (
+    assert (
+        option["yes_votes"],
+        option["maybe_votes"],
+        option["no_votes"],
+        option["current_user_vote"],
+    ) == (
         0,
         1,
         0,

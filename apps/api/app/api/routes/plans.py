@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, require_plan_member, require_plan_owner
 from app.db.base import get_session
 from app.models.activity import Activity
-from app.models.coordination import ActivityComment, ActivitySuggestion
+from app.models.coordination import ActivityComment, ActivitySuggestion, CoOwnerRequest
 from app.models.event import PlanEvent
 from app.models.expense import Expense, ExpenseSplit
 from app.models.itinerary import ItineraryItem
@@ -116,6 +116,7 @@ class ResyncSnapshot(BaseModel):
     date_availability: list[dict[str, Any]]
     date_suggestions: list[dict[str, Any]]
     plan_suggestions: list[dict[str, Any]]
+    co_owner_requests: list[dict[str, Any]]
     server_version: int
 
 
@@ -580,6 +581,28 @@ async def resync_plan(
             .order_by(PlanSuggestion.created_at.asc())
         )
     ).all()
+    co_owner_request_rows = []
+    if membership.role == "owner":
+        co_owner_request_rows = (
+            await session.execute(
+                select(CoOwnerRequest, User)
+                .join(User, User.id == CoOwnerRequest.requester_user_id)
+                .where(CoOwnerRequest.plan_id == plan_id)
+                .order_by(CoOwnerRequest.created_at.desc())
+            )
+        ).all()
+    elif membership.role == "member":
+        co_owner_request_rows = (
+            await session.execute(
+                select(CoOwnerRequest, User)
+                .join(User, User.id == CoOwnerRequest.requester_user_id)
+                .where(
+                    CoOwnerRequest.plan_id == plan_id,
+                    CoOwnerRequest.requester_user_id == membership.user_id,
+                )
+                .order_by(CoOwnerRequest.created_at.desc())
+            )
+        ).all()
     creator_names = {str(user.id): user.display_name for _, user in member_rows}
     creator_avatars = {str(user.id): user.avatar_emoji for _, user in member_rows}
 
@@ -608,7 +631,7 @@ async def resync_plan(
                 for vote in date_votes
                 if vote.suggestion_id == suggestion.id and vote.vote == "no"
             ),
-            "vote": next(
+            "current_user_vote": next(
                 (
                     vote.vote
                     for vote in date_votes
@@ -797,6 +820,25 @@ async def resync_plan(
                 "created_at": scalar(suggestion.created_at),
             }
             for suggestion, author in plan_suggestions
+        ],
+        co_owner_requests=[
+            {
+                "id": str(request.id),
+                "plan_id": str(request.plan_id),
+                "requester_user_id": str(request.requester_user_id),
+                "requester_display_name": requester.display_name,
+                "requester_avatar_emoji": requester.avatar_emoji,
+                "status": request.status,
+                "note": request.note,
+                "version": request.version,
+                "decided_by_user_id": str(request.decided_by_user_id)
+                if request.decided_by_user_id
+                else None,
+                "decided_at": scalar(request.decided_at),
+                "created_at": scalar(request.created_at),
+                "updated_at": scalar(request.updated_at),
+            }
+            for request, requester in co_owner_request_rows
         ],
         server_version=plan.version,
     )

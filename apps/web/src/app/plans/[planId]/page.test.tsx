@@ -253,23 +253,26 @@ describe("Phase 1B.5 planning UI", () => {
     const owner = snapshot();
     owner.members.push({ id: "pm-3", plan_id: "plan-1", user_id: "user-3", role: "co_owner", display_name: "Co Owner", created_at: "2026-02-03" });
     await renderPlan(owner);
-    expect(screen.getAllByText("Co Owner")[0].closest("article")?.textContent).toContain("co-owner");
+    fireEvent.click(screen.getByRole("button", { name: /Trip members/ }));
+    expect(within(screen.getByRole("dialog", { name: "Trip Members" })).getByText("Co Owner").closest("article")?.textContent).toContain("co-owner");
     expect(screen.queryByText(/Joined Feb 3, 2026/)).toBeNull();
-    expect(screen.getAllByRole("button", { name: "Demote" })).toHaveLength(1);
-    expect(screen.getAllByRole("button", { name: "Remove" })).toHaveLength(2);
-    fireEvent.click(screen.getByRole("button", { name: "Promote" }));
+    expect(screen.getAllByRole("button", { name: "Demote to member" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Remove from trip" })).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Promote to co-owner" }));
     await waitFor(() => expect(changeMemberRole).toHaveBeenCalledWith("app-jwt", "plan-1", "user-2", "co_owner", "operation-id"));
     expect(resyncPlan).toHaveBeenCalledTimes(2);
 
     cleanup();
     const coOwner = snapshot("co_owner"); coOwner.current_user_id = "user-3"; coOwner.members.push({ id: "pm-3", plan_id: "plan-1", user_id: "user-3", role: "co_owner", display_name: "Co Owner", created_at: "2026-02-03" });
     await renderPlan(coOwner);
-    expect(screen.queryByRole("button", { name: "Promote" })).toBeNull();
-    expect(screen.getAllByRole("button", { name: "Remove" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: /Trip members/ }));
+    expect(screen.queryByRole("button", { name: "Promote to co-owner" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Remove from trip" })).toHaveLength(1);
 
     cleanup(); await renderPlan(snapshot("member"));
-    expect(screen.queryByRole("button", { name: "Promote" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Trip members/ }));
+    expect(screen.queryByRole("button", { name: "Promote to co-owner" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remove from trip" })).toBeNull();
   });
 
   it("Phase 1B.75 public and anonymous votes render privacy-safe identities and totals", async () => {
@@ -313,7 +316,7 @@ describe("Phase 1B.5 planning UI", () => {
     const next = snapshot();
     next.activity_comments = [{ id: "comment-1", activity_id: "activity-1", author_id: "user-2", author_display_name: "Member", body: "Great idea", version: 1, deleted_at: null, created_at: "2026-01-01", updated_at: "2026-01-01" }];
     next.activity_suggestions = [{ id: "suggestion-1", activity_id: "activity-1", author_id: "user-2", author_display_name: "Member", suggestion_type: "notes", proposed_changes_json: { notes: "New" }, message: "Change notes", status: "open", created_at: "2026-01-01" }];
-    next.date_suggestions = [{ id: "date-1", starts_on: "2026-07-18", ends_on: "2026-07-21", message: null, status: "open", author_id: "user-2", author_display_name: "Tris", yes_votes: 0, maybe_votes: 0, no_votes: 0, vote: null }];
+    next.date_suggestions = [{ id: "date-1", starts_on: "2026-07-18", ends_on: "2026-07-21", message: null, status: "open", author_id: "user-2", author_display_name: "Tris", yes_votes: 0, maybe_votes: 0, no_votes: 0, current_user_vote: null }];
     await renderPlan(next);
     fireEvent.click(screen.getByText(/Discussion/));
     expect(screen.getByText("Great idea")).toBeTruthy();
@@ -354,8 +357,8 @@ describe("Phase 1B.5 planning UI", () => {
     const next = snapshot();
     next.activity_comments = [{ id: "comment-1", activity_id: "activity-1", author_id: "user-2", author_display_name: "Member", body: "Great idea", version: 1, deleted_at: null, created_at: "2026-01-01", updated_at: "2026-01-01" }];
     next.date_suggestions = [
-      { id: "date-later", starts_on: "2026-08-20", ends_on: "2026-08-22", message: null, status: "open", author_id: "user-2", author_display_name: "Member", yes_votes: 1, maybe_votes: 0, no_votes: 0, vote: null, created_at: "2026-01-02" },
-      { id: "date-leading", starts_on: "2026-08-23", ends_on: "2026-08-25", message: null, status: "accepted", author_id: "user-2", author_display_name: "Member", yes_votes: 2, maybe_votes: 0, no_votes: 0, vote: "yes", created_at: "2026-01-03" }
+      { id: "date-later", starts_on: "2026-08-20", ends_on: "2026-08-22", message: null, status: "open", author_id: "user-2", author_display_name: "Member", yes_votes: 1, maybe_votes: 0, no_votes: 0, current_user_vote: null, created_at: "2026-01-02" },
+      { id: "date-leading", starts_on: "2026-08-23", ends_on: "2026-08-25", message: null, status: "accepted", author_id: "user-2", author_display_name: "Member", yes_votes: 2, maybe_votes: 0, no_votes: 0, current_user_vote: "yes", created_at: "2026-01-03" }
     ];
     await renderPlan(next);
     const disclosure = screen.getByText(/Discussion \(1\)/).closest("details")!;
@@ -405,13 +408,13 @@ describe("Phase 1B.5 planning UI", () => {
 
   it("collapses the major plan sections while preserving their summaries and disclosure semantics", async () => {
     const next = snapshot();
-    next.date_suggestions = [{ id: "date-1", starts_on: "2026-08-02", ends_on: "2026-08-03", message: null, status: "accepted", author_id: "user-2", author_display_name: "Member", yes_votes: 1, maybe_votes: 0, no_votes: 0, vote: null }];
+    next.date_suggestions = [{ id: "date-1", starts_on: "2026-08-02", ends_on: "2026-08-03", message: null, status: "accepted", author_id: "user-2", author_display_name: "Member", yes_votes: 1, maybe_votes: 0, no_votes: 0, current_user_vote: null }];
     next.plan_suggestions = [{ id: "plan-idea", title: "Mountain weekend", description: null, starts_on: null, ends_on: null, budget_cents: null, max_drive_minutes: null, travel_mode: null, travel_duration_minutes: null, status: "open", author_id: "user-2", author_display_name: "Member", created_at: "2026-01-01" }];
     await renderPlan(next);
 
     expect(screen.getByText(/Trip dates: Aug 1, 2026/)).toBeTruthy();
     expect(screen.getByText("1 open suggestion.")).toBeTruthy();
-    for (const title of ["Travel window", "Travel-window poll", "Trip ideas", "Trip members", "Expenses"]) {
+    for (const title of ["Travel window", "Travel-window poll", "Trip ideas", "Expenses"]) {
       const button = screen.getByRole("button", { name: `Collapse ${title}` });
       expect(button.getAttribute("aria-expanded")).toBe("true");
       fireEvent.click(button);
@@ -422,9 +425,10 @@ describe("Phase 1B.5 planning UI", () => {
     fireEvent.click(planIdeas);
     expect(screen.getByRole("button", { name: "Collapse Plan ideas" }).getAttribute("aria-expanded")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Collapse Plan ideas" }));
-    const members = screen.getByRole("button", { name: "Expand Trip members" });
-    fireEvent.keyDown(members, { key: "Enter" });
-    expect(screen.getByRole("button", { name: "Collapse Trip members" }).getAttribute("aria-expanded")).toBe("true");
+    const members = screen.getByRole("button", { name: /Trip members/ });
+    fireEvent.click(members);
+    expect(members.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("button", { name: "Close trip members" })).toBeTruthy();
   });
 
   it("renders the availability map from authoritative dates, suggestions, and member responses", async () => {
@@ -436,8 +440,8 @@ describe("Phase 1B.5 planning UI", () => {
       { date: "2026-08-01", status: "maybe", user_id: "user-2", member_display_name: "Member", is_current_user: false }
     ];
     next.date_suggestions = [
-      { id: "accepted", starts_on: "2026-08-01", ends_on: "2026-08-02", message: null, status: "accepted", author_id: "user-2", author_display_name: "Member", yes_votes: 3, maybe_votes: 0, no_votes: 0, vote: null, created_at: "2026-01-01" },
-      { id: "open", starts_on: "2026-08-04", ends_on: "2026-08-05", message: null, status: "open", author_id: "user-2", author_display_name: "Member", yes_votes: 2, maybe_votes: 1, no_votes: 0, vote: null, created_at: "2026-01-02" }
+      { id: "accepted", starts_on: "2026-08-01", ends_on: "2026-08-02", message: null, status: "accepted", author_id: "user-2", author_display_name: "Member", yes_votes: 3, maybe_votes: 0, no_votes: 0, current_user_vote: null, created_at: "2026-01-01" },
+      { id: "open", starts_on: "2026-08-04", ends_on: "2026-08-05", message: null, status: "open", author_id: "user-2", author_display_name: "Member", yes_votes: 2, maybe_votes: 1, no_votes: 0, current_user_vote: null, created_at: "2026-01-02" }
     ];
     await renderPlan(next);
     expect(screen.getByRole("heading", { name: "Group availability" })).toBeTruthy();
@@ -456,7 +460,7 @@ describe("Phase 1B.5 planning UI", () => {
     next.plan.starts_on = "2026-08-31T00:00:00Z";
     next.plan.ends_on = "2026-08-31T00:00:00Z";
     next.date_availability = [];
-    next.date_suggestions = [{ id: "cross-month", starts_on: "2026-08-31", ends_on: "2026-09-02", message: null, status: "open", author_id: "user-2", author_display_name: "Member", yes_votes: 0, maybe_votes: 0, no_votes: 0, vote: null, created_at: "2026-01-01" }];
+    next.date_suggestions = [{ id: "cross-month", starts_on: "2026-08-31", ends_on: "2026-09-02", message: null, status: "open", author_id: "user-2", author_display_name: "Member", yes_votes: 0, maybe_votes: 0, no_votes: 0, current_user_vote: null, created_at: "2026-01-01" }];
     await renderPlan(next);
     expect(screen.getByRole("region", { name: "August 2026" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "September 2026" })).toBeTruthy();
@@ -490,7 +494,7 @@ describe("Phase 1B.5 planning UI", () => {
     const next = snapshot();
     next.plan.starts_on = "2026-09-10T00:00:00Z";
     next.plan.ends_on = "2026-09-12T00:00:00Z";
-    next.date_suggestions = [{ id: "historic", starts_on: "2026-08-01", ends_on: "2026-08-03", message: null, status: "accepted", author_id: "user-2", author_display_name: "Member", yes_votes: 2, maybe_votes: 0, no_votes: 0, vote: null, created_at: "2026-01-01" }];
+    next.date_suggestions = [{ id: "historic", starts_on: "2026-08-01", ends_on: "2026-08-03", message: null, status: "accepted", author_id: "user-2", author_display_name: "Member", yes_votes: 2, maybe_votes: 0, no_votes: 0, current_user_vote: null, created_at: "2026-01-01" }];
     await renderPlan(next);
     expect(screen.getByLabelText(/Saturday, August 1, 2026: 0 available/)).toBeTruthy();
     expect(screen.queryByLabelText(/Saturday, August 1, 2026: current trip date/)).toBeNull();

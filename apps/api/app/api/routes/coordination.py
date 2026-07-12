@@ -18,7 +18,7 @@ from app.api.deps import (
 )
 from app.db.base import get_session
 from app.models.activity import Activity
-from app.models.coordination import ActivityComment, ActivitySuggestion
+from app.models.coordination import ActivityComment, ActivitySuggestion, CoOwnerRequest
 from app.models.plan import (
     Plan,
     PlanDateAvailability,
@@ -39,6 +39,21 @@ router = APIRouter(tags=["coordination"])
 class RolePatch(BaseModel):
     role: str = Field(pattern="^(co_owner|member)$")
     client_operation_id: str | None = Field(default=None, max_length=120)
+
+
+class CoOwnerRequestCreate(BaseModel):
+    note: str | None = Field(default=None, max_length=1000)
+    client_operation_id: str = Field(max_length=120)
+
+    @field_validator("note")
+    @classmethod
+    def trim_note(cls, value: str | None) -> str | None:
+        return value.strip() if value and value.strip() else None
+
+
+class CoOwnerRequestDecision(BaseModel):
+    expected_version: int = Field(ge=1)
+    client_operation_id: str = Field(max_length=120)
 
 
 class VoteVisibilityPatch(BaseModel):
@@ -200,6 +215,28 @@ async def change_member_role(
     if isinstance(claim, dict):
         return claim
     target.role = payload.role
+    resolved_requests: list[CoOwnerRequest] = []
+    if payload.role == "co_owner":
+        resolved_requests = (
+            (
+                await session.execute(
+                    select(CoOwnerRequest)
+                    .where(
+                        CoOwnerRequest.plan_id == plan_id,
+                        CoOwnerRequest.requester_user_id == target.user_id,
+                        CoOwnerRequest.status == "pending",
+                    )
+                    .with_for_update()
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for request in resolved_requests:
+            request.status = "approved"
+            request.decided_by_user_id = actor.user_id
+            request.decided_at = datetime.now(timezone.utc)
+            request.version += 1
     body = {"user_id": str(target.user_id), "role": target.role}
     await complete_operation(session, claim, target.id, body, response_status=status.HTTP_200_OK)
     event = await append_plan_event(
@@ -212,8 +249,24 @@ async def change_member_role(
         resource_version_after=None,
         client_operation_id=payload.client_operation_id,
     )
+    request_events = []
+    for request in resolved_requests:
+        request_events.append(
+            await append_plan_event(
+                session,
+                plan_id=plan_id,
+                actor_id=actor.user_id,
+                event_type="co_owner_request.approved",
+                resource_type="co_owner_request",
+                resource_id=request.id,
+                resource_version_after=request.version,
+                client_operation_id=payload.client_operation_id,
+            )
+        )
     await session.commit()
     await broadcast_committed_plan_event(event)
+    for request_event in request_events:
+        await broadcast_committed_plan_event(request_event)
     return body
 
 
@@ -226,7 +279,6 @@ async def remove_member(
     session: AsyncSession = Depends(get_session),
 ) -> None:
     target = await target_member(session, plan_id, member_user_id)
-    assert_member_action(actor, target, changing_role=False)
     claim = await claim_operation(
         session,
         plan_id=plan_id,
@@ -237,6 +289,30 @@ async def remove_member(
     )
     if isinstance(claim, dict):
         return None
+    # Serialize member removal with an owner decision. A removal makes any
+    # still-pending request terminal without deleting its audit record.
+    pending_requests = (
+        (
+            await session.execute(
+                select(CoOwnerRequest)
+                .where(
+                    CoOwnerRequest.plan_id == plan_id,
+                    CoOwnerRequest.requester_user_id == target.user_id,
+                    CoOwnerRequest.status == "pending",
+                )
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for request in pending_requests:
+        request.status = "withdrawn"
+        request.version += 1
+    # A concurrent approval can change this member's role while removal waits
+    # on the request lock; re-read before applying the permission matrix.
+    await session.refresh(target)
+    assert_member_action(actor, target, changing_role=False)
     target_id = target.id
     target_user_id = target.user_id
     await session.delete(target)
@@ -258,6 +334,226 @@ async def remove_member(
         plan_id, target_user_id, reason="plan_membership_required"
     )
     await broadcast_committed_plan_event(event)
+
+
+def co_owner_request_response(request: CoOwnerRequest, requester: User) -> dict[str, Any]:
+    return {
+        "id": str(request.id),
+        "plan_id": str(request.plan_id),
+        "requester_user_id": str(request.requester_user_id),
+        "requester_display_name": requester.display_name,
+        "requester_avatar_emoji": requester.avatar_emoji,
+        "status": request.status,
+        "note": request.note,
+        "version": request.version,
+        "decided_by_user_id": str(request.decided_by_user_id)
+        if request.decided_by_user_id
+        else None,
+        "decided_at": request.decided_at.isoformat() if request.decided_at else None,
+        "created_at": request.created_at.isoformat(),
+        "updated_at": request.updated_at.isoformat(),
+    }
+
+
+@router.post("/plans/{plan_id}/co-owner-requests", status_code=status.HTTP_201_CREATED)
+async def create_co_owner_request(
+    plan_id: UUID,
+    payload: CoOwnerRequestCreate,
+    user: User = Depends(get_current_user),
+    membership: PlanMember = Depends(require_plan_member),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    if membership.role != "member":
+        raise HTTPException(status_code=409, detail={"error": "co_owner_request_not_eligible"})
+    claim = await claim_operation(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        client_operation_id=payload.client_operation_id,
+        payload={"note": payload.note},
+        resource_type="co_owner_request",
+    )
+    if isinstance(claim, dict):
+        return claim
+    request = CoOwnerRequest(
+        plan_id=plan_id, requester_user_id=user.id, note=payload.note, status="pending"
+    )
+    try:
+        # Keep the outer idempotency transaction usable when the database
+        # rejects a duplicate active request.
+        async with session.begin_nested():
+            session.add(request)
+            await session.flush()
+    except Exception as error:
+        # The database partial unique index, rather than a check-then-insert,
+        # protects the one-active-request invariant.
+        from sqlalchemy.exc import IntegrityError
+
+        if not isinstance(error, IntegrityError):
+            raise
+        raise HTTPException(
+            status_code=409, detail={"error": "co_owner_request_pending"}
+        ) from error
+    body = co_owner_request_response(request, user)
+    await complete_operation(
+        session, claim, request.id, body, response_status=status.HTTP_201_CREATED
+    )
+    event = await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        event_type="co_owner_request.created",
+        resource_type="co_owner_request",
+        resource_id=request.id,
+        resource_version_after=request.version,
+        client_operation_id=payload.client_operation_id,
+    )
+    await session.commit()
+    await broadcast_committed_plan_event(event)
+    return body
+
+
+@router.post("/plans/{plan_id}/co-owner-requests/{request_id}/withdraw")
+async def withdraw_co_owner_request(
+    plan_id: UUID,
+    request_id: UUID,
+    payload: CoOwnerRequestDecision,
+    user: User = Depends(get_current_user),
+    membership: PlanMember = Depends(require_plan_member),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    claim = await claim_operation(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        client_operation_id=payload.client_operation_id,
+        payload={"request_id": request_id, "expected_version": payload.expected_version},
+        resource_type="co_owner_request_withdraw",
+    )
+    if isinstance(claim, dict):
+        return claim
+    request = (
+        await session.execute(
+            select(CoOwnerRequest)
+            .where(
+                CoOwnerRequest.id == request_id,
+                CoOwnerRequest.plan_id == plan_id,
+                CoOwnerRequest.requester_user_id == user.id,
+                CoOwnerRequest.status == "pending",
+                CoOwnerRequest.version == payload.expected_version,
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if request is None:
+        raise HTTPException(status_code=409, detail={"error": "co_owner_request_conflict"})
+    request.status = "withdrawn"
+    request.version += 1
+    body = {"id": str(request.id), "status": request.status, "version": request.version}
+    await complete_operation(session, claim, request.id, body, response_status=status.HTTP_200_OK)
+    event = await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        event_type="co_owner_request.withdrawn",
+        resource_type="co_owner_request",
+        resource_id=request.id,
+        resource_version_after=request.version,
+        client_operation_id=payload.client_operation_id,
+    )
+    await session.commit()
+    await broadcast_committed_plan_event(event)
+    return body
+
+
+@router.post("/plans/{plan_id}/co-owner-requests/{request_id}/{decision}")
+async def decide_co_owner_request(
+    plan_id: UUID,
+    request_id: UUID,
+    decision: str,
+    payload: CoOwnerRequestDecision,
+    user: User = Depends(get_current_user),
+    actor: PlanMember = Depends(require_primary_owner),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    if decision not in {"approve", "deny"}:
+        raise HTTPException(
+            status_code=404, detail={"error": "co_owner_request_decision_not_found"}
+        )
+    claim = await claim_operation(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        client_operation_id=payload.client_operation_id,
+        payload={
+            "request_id": request_id,
+            "decision": decision,
+            "expected_version": payload.expected_version,
+        },
+        resource_type="co_owner_request_decision",
+    )
+    if isinstance(claim, dict):
+        return claim
+    request = (
+        await session.execute(
+            select(CoOwnerRequest)
+            .where(
+                CoOwnerRequest.id == request_id,
+                CoOwnerRequest.plan_id == plan_id,
+                CoOwnerRequest.status == "pending",
+                CoOwnerRequest.version == payload.expected_version,
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if request is None:
+        raise HTTPException(status_code=409, detail={"error": "co_owner_request_conflict"})
+    requester = (
+        await session.execute(
+            select(PlanMember)
+            .where(PlanMember.plan_id == plan_id, PlanMember.user_id == request.requester_user_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if requester is None:
+        raise HTTPException(status_code=409, detail={"error": "co_owner_requester_removed"})
+    if decision == "approve" and requester.role != "member":
+        raise HTTPException(status_code=409, detail={"error": "co_owner_request_not_eligible"})
+    request.status = "approved" if decision == "approve" else "denied"
+    request.decided_by_user_id = actor.user_id
+    request.decided_at = datetime.now(timezone.utc)
+    request.version += 1
+    if decision == "approve":
+        requester.role = "co_owner"
+    body = {"id": str(request.id), "status": request.status, "version": request.version}
+    await complete_operation(session, claim, request.id, body, response_status=status.HTTP_200_OK)
+    event = await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        event_type=f"co_owner_request.{request.status}",
+        resource_type="co_owner_request",
+        resource_id=request.id,
+        resource_version_after=request.version,
+        client_operation_id=payload.client_operation_id,
+    )
+    role_event = None
+    if decision == "approve":
+        role_event = await append_plan_event(
+            session,
+            plan_id=plan_id,
+            actor_id=user.id,
+            event_type="member.role_updated",
+            resource_type="plan_member",
+            resource_id=requester.id,
+            resource_version_after=None,
+            client_operation_id=payload.client_operation_id,
+        )
+    await session.commit()
+    await broadcast_committed_plan_event(event)
+    if role_event is not None:
+        await broadcast_committed_plan_event(role_event)
+    return body
 
 
 @router.patch("/plans/{plan_id}/vote-visibility")
