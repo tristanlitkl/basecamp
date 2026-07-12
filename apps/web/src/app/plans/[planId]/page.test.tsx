@@ -443,13 +443,13 @@ describe("Phase 1B.5 planning UI", () => {
     await renderPlan(next);
     expect(screen.getByRole("heading", { name: "Group availability" })).toBeTruthy();
     expect(screen.getByText("Leading option").parentElement?.textContent).toContain("Aug 4 – Aug 5");
-    expect(screen.getByLabelText(/Saturday, August 1, 2026: accepted trip date, 1 available, 1 maybe, 0 unavailable, 0 no response/)).toBeTruthy();
-    expect(screen.getByText("Accepted trip date")).toBeTruthy();
+    expect(screen.getByLabelText(/Saturday, August 1, 2026: current trip date, 1 available, 1 maybe, 0 unavailable, 0 no response/)).toBeTruthy();
+    expect(screen.getByText("Current trip date")).toBeTruthy();
     expect(screen.getByText("No response")).toBeTruthy();
     fireEvent.click(screen.getByLabelText(/Saturday, August 1, 2026/));
     expect(screen.getByRole("heading", { name: "Availability for Saturday, August 1, 2026" })).toBeTruthy();
     expect(screen.getByText("✓ Available")).toBeTruthy();
-    expect(screen.getByText("~ Maybe")).toBeTruthy();
+    expect(screen.getByText("❓ Maybe")).toBeTruthy();
   });
 
   it("keeps the calendar useful for a single date, month boundary, and no responses", async () => {
@@ -461,7 +461,52 @@ describe("Phase 1B.5 planning UI", () => {
     await renderPlan(next);
     expect(screen.getByRole("region", { name: "August 2026" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "September 2026" })).toBeTruthy();
-    expect(screen.getByLabelText(/Monday, August 31, 2026: proposed trip date, 0 available, 0 maybe, 0 unavailable, 2 no response/)).toBeTruthy();
+    expect(screen.getByLabelText(/Monday, August 31, 2026: current trip date, 0 available, 0 maybe, 0 unavailable, 2 no response/)).toBeTruthy();
+  });
+
+  it("uses the red question-mark Maybe icon without losing the accessible label", async () => {
+    await renderPlan();
+    const maybe = screen.getByRole("button", { name: "Vote maybe" });
+    expect(maybe.textContent).toContain("❓");
+    expect(maybe.textContent).toContain("Maybe");
+  });
+
+  it("replaces calendar selection from an authoritative resync across a year boundary", async () => {
+    const next = snapshot();
+    next.plan.starts_on = "2026-07-29T00:00:00Z";
+    next.plan.ends_on = "2026-08-03T00:00:00Z";
+    await renderPlan(next);
+    expect(screen.getByLabelText(/Wednesday, July 29, 2026: current trip date/)).toBeTruthy();
+    const refreshed = snapshot();
+    refreshed.plan.starts_on = "2026-12-30T00:00:00Z";
+    refreshed.plan.ends_on = "2027-01-04T00:00:00Z";
+    act(() => vi.mocked(usePlanSocket).mock.calls[0][0].onSnapshot(refreshed));
+    expect(screen.queryByLabelText(/Wednesday, July 29, 2026: current trip date/)).toBeNull();
+    expect(screen.getByRole("region", { name: "December 2026" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "January 2027" })).toBeTruthy();
+    expect(screen.getByLabelText(/Thursday, December 31, 2026: current trip date/)).toBeTruthy();
+  });
+
+  it("groups trip ideas by the authoritative itinerary activity identifier and keeps disclosures accessible", async () => {
+    const next = snapshot();
+    next.activities.push({ ...next.activities[0], id: "activity-2", name: "Museum" });
+    next.itinerary_items[0].activity_id = "activity-2";
+    await renderPlan(next);
+    expect(screen.getByRole("button", { name: "Collapse Not in itinerary (1)" })).toBeTruthy();
+    const inItinerary = screen.getByRole("button", { name: "Collapse In itinerary (1)" });
+    const group = inItinerary.closest("section")!;
+    expect(within(group).getByRole("heading", { name: "Museum" })).toBeTruthy();
+    fireEvent.keyDown(inItinerary, { key: " " });
+    expect(screen.getByRole("button", { name: "Expand In itinerary (1)" }).getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("collapses balances while retaining the authoritative outstanding summary", async () => {
+    await renderPlan();
+    const toggle = screen.getByRole("button", { name: "Collapse Balances" });
+    expect(screen.getByText("Balances · 2 members · $5.00 outstanding")).toBeTruthy();
+    fireEvent.click(toggle);
+    expect(screen.getByRole("button", { name: "Expand Balances" }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByText("Balances · 2 members · $5.00 outstanding")).toBeTruthy();
   });
 
   it("keeps disclosure-state feedback when reduced motion is requested", () => {
