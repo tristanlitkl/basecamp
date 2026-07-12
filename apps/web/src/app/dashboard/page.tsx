@@ -5,8 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 
-import { createPlan, getMe, listPlans, syncUser, updateDisplayName } from "@/lib/api-client";
-import type { PlanSummary } from "@/types/api";
+import { AdventureBackground } from "@/components/plans/adventure-background";
+import { EmojiPicker } from "@/components/ui/emoji-picker";
+import { avatarEmoji } from "@/lib/avatar";
+import { createPlan, getMe, listPlans, syncUser, updateAvatarEmoji, updateDisplayName } from "@/lib/api-client";
+import type { PlanSummary, User } from "@/types/api";
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
@@ -15,6 +18,10 @@ export default function DashboardPage() {
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("");
+  const [user, setUser] = useState<User | null>(null);
+  const [avatarDraft, setAvatarDraft] = useState("🧭");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [savingAvatar, setSavingAvatar] = useState(false);
 
   useEffect(() => {
     const appJwt = session?.appJwt;
@@ -25,7 +32,10 @@ export default function DashboardPage() {
     async function load(token: string) {
       try {
         await syncUser(token);
-        setDisplayName((await getMe(token)).display_name);
+        const currentUser = await getMe(token);
+        setUser(currentUser);
+        setDisplayName(currentUser.display_name);
+        setAvatarDraft(avatarEmoji(currentUser.avatar_emoji));
         setPlans(await listPlans(token));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load dashboard");
@@ -66,10 +76,10 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="app-shell">
+    <main className="app-shell"><AdventureBackground />
       <header className="topbar app-header">
         <div className="header-context"><div className="brand"><span className="brand-mark">B</span> Basecamp</div><span className="header-divider" /><span className="muted small">Plans</span></div>
-        <div className="user-area"><span className="avatar avatar-small" aria-hidden="true">{displayName?.slice(0, 1).toUpperCase() || "B"}</span><span className="user-copy"><strong>{displayName || "Your profile"}</strong><span>{session.user?.email}</span></span><button className="btn btn-quiet" type="button" onClick={() => signOut()}>Sign out</button></div>
+        <div className="user-area"><button className="avatar avatar-small avatar-profile-button" aria-expanded={pickerOpen} aria-label="Edit your avatar" onClick={() => setPickerOpen((open) => !open)} type="button">{avatarEmoji(user?.avatar_emoji)}</button><span className="user-copy"><strong>{displayName || "Your profile"}</strong><span>{session.user?.email}</span></span><button className="btn btn-quiet" type="button" onClick={() => signOut()}>Sign out</button></div>
       </header>
       <section className="dashboard-intro">
         <div>
@@ -84,8 +94,10 @@ export default function DashboardPage() {
       </section>
 
       <section className="card section-card profile-card compact-card">
-        <div className="section-heading"><div><h2>Profile</h2><p className="muted small">This name is shown to people you plan with.</p></div><span className="badge">{session.user?.email}</span></div>
-        <form onSubmit={async (event) => { event.preventDefault(); if (!session?.appJwt) return; try { const user = await updateDisplayName(session.appJwt, displayName); setDisplayName(user.display_name); } catch { setError("Unable to save your Basecamp name."); } }} className="cluster">
+        <div className="section-heading"><div><h2>Profile</h2><p className="muted small">Your name and avatar are shown to people you plan with.</p></div><span className="badge">{session.user?.email}</span></div>
+        <button aria-expanded={pickerOpen} className="profile-avatar-control" onClick={() => setPickerOpen((open) => !open)} type="button"><span className="avatar" aria-hidden="true">{avatarEmoji(user?.avatar_emoji)}</span><span><strong>{displayName || "Your profile"}</strong><small>Change avatar</small></span></button>
+        {pickerOpen && <div className="subcard stack"><EmojiPicker value={avatarDraft} onChange={setAvatarDraft} disabled={savingAvatar} /><div className="cluster"><button className="btn" disabled={savingAvatar || !session?.appJwt} onClick={async () => { if (!session?.appJwt) return; setSavingAvatar(true); setError(null); try { const nextUser = await updateAvatarEmoji(session.appJwt, avatarDraft); setUser(nextUser); setAvatarDraft(avatarEmoji(nextUser.avatar_emoji)); setPickerOpen(false); } catch { setError("Unable to save your Basecamp avatar."); } finally { setSavingAvatar(false); } }} type="button">{savingAvatar ? "Saving…" : "Save avatar"}</button><button className="btn btn-secondary" disabled={savingAvatar} onClick={() => { setAvatarDraft(avatarEmoji(user?.avatar_emoji)); setPickerOpen(false); }} type="button">Cancel</button></div></div>}
+        <form onSubmit={async (event) => { event.preventDefault(); if (!session?.appJwt) return; try { const nextUser = await updateDisplayName(session.appJwt, displayName); setUser(nextUser); setDisplayName(nextUser.display_name); } catch { setError("Unable to save your Basecamp name."); } }} className="cluster">
           <label className="field" style={{ flex: 1 }}>Your name in Basecamp <input value={displayName} maxLength={50} onChange={(event) => setDisplayName(event.target.value)} /></label>
           <button className="btn btn-secondary" type="submit">Save name</button>
         </form>

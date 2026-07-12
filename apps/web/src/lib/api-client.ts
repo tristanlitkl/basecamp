@@ -91,6 +91,10 @@ export function updateDisplayName(token: string, display_name: string): Promise<
   return apiFetch<User>(token, "/auth/me", { method: "PATCH", body: { display_name } });
 }
 
+export function updateAvatarEmoji(token: string, avatar_emoji: string): Promise<User> {
+  return apiFetch<User>(token, "/auth/me", { method: "PATCH", body: { avatar_emoji } });
+}
+
 export function listPlans(token: string): Promise<PlanSummary[]> {
   return apiFetch<PlanSummary[]>(token, "/plans");
 }
@@ -120,9 +124,9 @@ export function createInvite(token: string, planId: string): Promise<{ token: st
   });
 }
 
-export function joinInvite(token: string, inviteToken: string, display_name?: string): Promise<{ plan_id: string; role: string }> {
+export function joinInvite(token: string, inviteToken: string, display_name?: string, avatar_emoji?: string): Promise<{ plan_id: string; role: string }> {
   return apiFetch<{ plan_id: string; role: string }>(token, `/invites/${inviteToken}/join`, {
-    method: "POST", body: display_name ? { display_name } : undefined
+    method: "POST", body: display_name || avatar_emoji ? { display_name, avatar_emoji } : undefined
   });
 }
 

@@ -1,4 +1,4 @@
-export type User = { id: string; email: string; display_name: string };
+export type User = { id: string; email: string; display_name: string; avatar_emoji?: string };
 
 export type PlanSummary = {
   id: string;
@@ -31,6 +31,7 @@ export type ActivitySummary = {
   estimated_duration_minutes: number | null;
   travel_mode: "car" | "plane" | "train" | "bus" | null;
   creator_display_name?: string;
+  creator_avatar_emoji?: string | null;
   tags: string[];
   notes: string | null;
   vote: string | null;
@@ -104,19 +105,21 @@ export type PlanMember = {
   role: "owner" | "co_owner" | "member";
   email?: string;
   display_name: string;
+  avatar_emoji?: string;
   created_at: string;
 };
-export type ActivityComment = { id: string; activity_id: string; author_id: string; author_display_name: string; body: string; version: number; deleted_at: string | null; created_at: string; updated_at: string };
-export type ActivitySuggestion = { id: string; activity_id: string; author_id: string; author_display_name: string; suggestion_type: string; proposed_changes_json: Record<string, unknown>; message: string | null; status: "open" | "accepted" | "dismissed"; created_at: string };
+export type ActivityComment = { id: string; activity_id: string; author_id: string; author_display_name: string; author_avatar_emoji?: string; body: string; version: number; deleted_at: string | null; created_at: string; updated_at: string };
+export type ActivitySuggestion = { id: string; activity_id: string; author_id: string; author_display_name: string; author_avatar_emoji?: string; suggestion_type: string; proposed_changes_json: Record<string, unknown>; message: string | null; status: "open" | "accepted" | "dismissed"; created_at: string };
 export type DateAvailability = {
   date: string;
   status: "available" | "maybe" | "unavailable";
   user_id: string;
   member_display_name: string;
+  member_avatar_emoji?: string;
   is_current_user: boolean;
 };
-export type DateSuggestion = { id: string; starts_on: string; ends_on: string; message: string | null; status: "open" | "accepted" | "dismissed" | "archived"; author_id: string; author_display_name: string; yes_votes: number; maybe_votes: number; no_votes: number; vote: "yes" | "maybe" | "no" | null; created_at?: string };
-export type PlanSuggestion = { id: string; title: string; description: string | null; starts_on: string | null; ends_on: string | null; budget_cents: number | null; max_drive_minutes: number | null; travel_mode: "car" | "plane" | "train" | "bus" | null; travel_duration_minutes: number | null; status: "open" | "accepted" | "dismissed" | "archived"; author_id: string; author_display_name: string; created_at: string };
+export type DateSuggestion = { id: string; starts_on: string; ends_on: string; message: string | null; status: "open" | "accepted" | "dismissed" | "archived"; author_id: string; author_display_name: string; author_avatar_emoji?: string; yes_votes: number; maybe_votes: number; no_votes: number; vote: "yes" | "maybe" | "no" | null; created_at?: string };
+export type PlanSuggestion = { id: string; title: string; description: string | null; starts_on: string | null; ends_on: string | null; budget_cents: number | null; max_drive_minutes: number | null; travel_mode: "car" | "plane" | "train" | "bus" | null; travel_duration_minutes: number | null; status: "open" | "accepted" | "dismissed" | "archived"; author_id: string; author_display_name: string; author_avatar_emoji?: string; created_at: string };
 export type PlanEvent = {
   id: string;
   plan_id: string;

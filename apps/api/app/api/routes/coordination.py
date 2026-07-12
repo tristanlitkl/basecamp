@@ -137,6 +137,7 @@ def member_response(member: PlanMember, user: User) -> dict[str, Any]:
         "user_id": str(member.user_id),
         "role": member.role,
         "display_name": user.display_name,
+        "avatar_emoji": user.avatar_emoji,
         "created_at": member.created_at.isoformat(),
     }
 

@@ -48,6 +48,8 @@ import { usePlanSocket } from "@/hooks/usePlanSocket";
 import { snapshotToPlanDetail } from "@/hooks/useResyncPlan";
 import { AvailabilityCalendar } from "@/components/plans/availability-calendar";
 import { AdventureBackground } from "@/components/plans/adventure-background";
+import { avatarEmoji } from "@/lib/avatar";
+import { sortMembers } from "@/lib/member-directory";
 import type { ActivitySummary, Expense, PlanBalance, PlanDetail, ResyncSnapshot } from "@/types/api";
 
 type TravelMode = "car" | "plane" | "train" | "bus";
@@ -80,6 +82,25 @@ function displayMember(snapshot: ResyncSnapshot, userId: string) {
 
 function initials(name: string) {
   return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "?";
+}
+
+function TripMembersCard({ members, currentUserId }: { members: ResyncSnapshot["members"]; currentUserId: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const sortedMembers = sortMembers(members);
+  return <div className="card stat trip-members-stat">
+    <button aria-controls="trip-members-directory" aria-expanded={expanded} className="trip-members-trigger" onClick={() => setExpanded((open) => !open)} type="button">
+      <span><i aria-hidden="true">◉</i> Trip members</span>
+      <span className="trip-member-avatars" aria-label={`${sortedMembers.length} trip members`}>
+        {sortedMembers.slice(0, 5).map((member) => <span aria-label={member.display_name} className="member-emoji-avatar" key={member.user_id} role="img">{avatarEmoji(member.avatar_emoji)}</span>)}
+        {sortedMembers.length > 5 && <span className="member-overflow member-overflow-desktop" aria-label={`Show ${sortedMembers.length - 5} more members`}>+{sortedMembers.length - 5}</span>}
+        {sortedMembers.length > 3 && <span className="member-overflow member-overflow-mobile" aria-label={`Show ${sortedMembers.length - 3} more members`}>+{sortedMembers.length - 3}</span>}
+      </span>
+    </button>
+    {expanded && <div className="trip-members-popover" id="trip-members-directory" role="dialog" aria-label="Trip member directory">
+      <div className="split"><strong>Trip members</strong><button className="btn btn-quiet" onClick={() => setExpanded(false)} type="button">Close</button></div>
+      <ul>{sortedMembers.map((member) => <li key={member.user_id}><span className="member-emoji-avatar" aria-hidden="true">{avatarEmoji(member.avatar_emoji)}</span><span className="member-directory-name"><strong>{member.display_name}</strong>{member.user_id === currentUserId && <small>You</small>}</span><span className={`badge badge-${member.role}`}>{member.role.replace("_", "-")}</span></li>)}</ul>
+    </div>}
+  </div>;
 }
 
 function readableDate(value: string | null | undefined) {
@@ -300,6 +321,7 @@ export default function PlanPage() {
   const disabled = finalized || pending;
   const canManage = plan.role === "owner" || plan.role === "co_owner";
   const itinerary = [...snapshot.itinerary_items].sort((left, right) => comparePositionKeys(left.position_key, right.position_key));
+  const sortedMembers = sortMembers(snapshot.members);
   const toggleParticipants = (userId: string, selected: string[], setSelected: (next: string[]) => void) =>
     setSelected(selected.includes(userId) ? selected.filter((id) => id !== userId) : [...selected, userId]);
   const startExpenseEdit = (expense: Expense) => {
@@ -313,7 +335,7 @@ export default function PlanPage() {
   return <main className="app-shell"><AdventureBackground />
     <header className="topbar app-header">
       <div className="header-context"><Link className="brand" href="/dashboard"><span className="brand-mark">B</span> Basecamp</Link><span className="header-divider" /><span className="muted small">Plan workspace</span></div>
-      <div className="user-area"><span className="avatar avatar-small" aria-hidden="true">{initials(displayMember(snapshot, snapshot.current_user_id))}</span><span className="user-copy"><strong>{displayMember(snapshot, snapshot.current_user_id)}</strong><span>{plan.role.replace("_", "-")}</span></span><button className="btn btn-quiet" type="button" onClick={() => signOut()}>Sign out</button></div>
+      <div className="user-area"><span className="avatar avatar-small" aria-hidden="true">{avatarEmoji(snapshot.members.find((member) => member.user_id === snapshot.current_user_id)?.avatar_emoji)}</span><span className="user-copy"><strong>{displayMember(snapshot, snapshot.current_user_id)}</strong><span>{plan.role.replace("_", "-")}</span></span><button className="btn btn-quiet" type="button" onClick={() => signOut()}>Sign out</button></div>
     </header>
     <header className="plan-header trip-hero">
       <Link className="breadcrumb" href="/dashboard">← Back to dashboard</Link>
@@ -338,6 +360,7 @@ export default function PlanPage() {
       <div className="card stat"><span><i aria-hidden="true">◷</i> Travel duration</span><strong>{readableDuration(plan.travel_duration_minutes)}</strong></div>
       <div className="card stat"><span><i aria-hidden="true">◇</i> Budget</span><strong>{plan.budget_cents === null ? "Not set" : formatCents(plan.budget_cents)}</strong></div>
       <div className="card stat"><span><i aria-hidden="true">◎</i> Travel group</span><strong>{snapshot.members.length}</strong></div>
+      <TripMembersCard currentUserId={snapshot.current_user_id} members={snapshot.members} />
     </section>
     {inviteToken && <div className="notice cluster"><strong>Invite ready:</strong><code>{typeof window === "undefined" ? inviteToken : `${window.location.origin}/invites/${inviteToken}`}</code></div>}
     <div className="page-grid"><div>
@@ -345,7 +368,7 @@ export default function PlanPage() {
     <AvailabilityCalendar availability={snapshot.date_availability} members={snapshot.members} plan={plan} suggestions={snapshot.date_suggestions} />
 
     <DisclosureSection id="trip-members" title="Trip members" summary={`${snapshot.members.length} ${snapshot.members.length === 1 ? "member" : "members"} coordinating this trip.`}>
-      {snapshot.members.map((member) => <article className="member-row" key={member.user_id}><span className="avatar" aria-hidden="true">{initials(member.display_name)}</span><div><div className="member-meta"><strong>{member.display_name}</strong>{member.user_id === snapshot.current_user_id && <span className="badge">You</span>}<span className={`badge badge-${member.role}`}>{member.role.replace("_", "-")}</span></div></div>{plan.role === "owner" && member.role !== "owner" && member.user_id !== snapshot.current_user_id && <div className="member-actions"><button className="btn btn-secondary" disabled={disabled} onClick={() => void mutate(() => changeMemberRole(session.appJwt!, planId, member.user_id, member.role === "co_owner" ? "member" : "co_owner", crypto.randomUUID()))}>{member.role === "co_owner" ? "Demote" : "Promote"}</button><button className="btn btn-danger" disabled={disabled} onClick={() => { if (window.confirm(`Remove ${member.display_name}?`)) void mutate(() => removeMember(session.appJwt!, planId, member.user_id, crypto.randomUUID())); }}>Remove</button></div>}{plan.role === "co_owner" && member.role === "member" && member.user_id !== snapshot.current_user_id && <div className="member-actions"><button className="btn btn-danger" disabled={disabled} onClick={() => { if (window.confirm(`Remove ${member.display_name}?`)) void mutate(() => removeMember(session.appJwt!, planId, member.user_id, crypto.randomUUID())); }}>Remove</button></div>}</article>)}
+      {sortedMembers.map((member) => <article className="member-row" key={member.user_id}><span className="avatar" aria-hidden="true">{avatarEmoji(member.avatar_emoji)}</span><div><div className="member-meta"><strong>{member.display_name}</strong>{member.user_id === snapshot.current_user_id && <span className="badge">You</span>}<span className={`badge badge-${member.role}`}>{member.role.replace("_", "-")}</span></div></div>{plan.role === "owner" && member.role !== "owner" && member.user_id !== snapshot.current_user_id && <div className="member-actions"><button className="btn btn-secondary" disabled={disabled} onClick={() => void mutate(() => changeMemberRole(session.appJwt!, planId, member.user_id, member.role === "co_owner" ? "member" : "co_owner", crypto.randomUUID()))}>{member.role === "co_owner" ? "Demote" : "Promote"}</button><button className="btn btn-danger" disabled={disabled} onClick={() => { if (window.confirm(`Remove ${member.display_name}?`)) void mutate(() => removeMember(session.appJwt!, planId, member.user_id, crypto.randomUUID())); }}>Remove</button></div>}{plan.role === "co_owner" && member.role === "member" && member.user_id !== snapshot.current_user_id && <div className="member-actions"><button className="btn btn-danger" disabled={disabled} onClick={() => { if (window.confirm(`Remove ${member.display_name}?`)) void mutate(() => removeMember(session.appJwt!, planId, member.user_id, crypto.randomUUID())); }}>Remove</button></div>}</article>)}
     </DisclosureSection>
 
     <section className="card section-card">

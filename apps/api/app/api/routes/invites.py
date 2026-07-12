@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_plan_owner
+from app.api.routes.auth import SUPPORTED_AVATAR_EMOJIS
 from app.db.base import get_session
 from app.models.invite import PlanInvite
 from app.models.plan import Plan, PlanMember
@@ -32,6 +33,7 @@ class JoinResponse(BaseModel):
 
 class JoinRequest(BaseModel):
     display_name: str | None = Field(default=None, max_length=50)
+    avatar_emoji: str | None = Field(default=None, max_length=16)
 
     @field_validator("display_name")
     @classmethod
@@ -42,6 +44,13 @@ class JoinRequest(BaseModel):
         if not normalized:
             raise ValueError("display_name must not be blank")
         return normalized
+
+    @field_validator("avatar_emoji")
+    @classmethod
+    def validate_avatar_emoji(cls, value: str | None) -> str | None:
+        if value is not None and value not in SUPPORTED_AVATAR_EMOJIS:
+            raise ValueError("avatar_emoji must be a supported Basecamp avatar")
+        return value
 
 
 def hash_invite_token(token: str) -> str:
@@ -109,6 +118,8 @@ async def join_invite(
     if membership is None:
         if payload.display_name is not None:
             user.display_name = payload.display_name
+        if payload.avatar_emoji is not None:
+            user.avatar_emoji = payload.avatar_emoji
         membership = PlanMember(plan_id=invite.plan_id, user_id=user.id, role="member")
         session.add(membership)
         await session.flush()
@@ -124,6 +135,11 @@ async def join_invite(
         await session.commit()
     elif payload.display_name is not None:
         user.display_name = payload.display_name
+        if payload.avatar_emoji is not None:
+            user.avatar_emoji = payload.avatar_emoji
+        await session.commit()
+    elif payload.avatar_emoji is not None:
+        user.avatar_emoji = payload.avatar_emoji
         await session.commit()
 
     return JoinResponse(plan_id=invite.plan_id, role=membership.role)

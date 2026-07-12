@@ -578,6 +578,7 @@ async def resync_plan(
         )
     ).all()
     creator_names = {str(user.id): user.display_name for _, user in member_rows}
+    creator_avatars = {str(user.id): user.avatar_emoji for _, user in member_rows}
 
     date_suggestion_rows = [
         {
@@ -588,6 +589,7 @@ async def resync_plan(
             "status": suggestion.status,
             "author_id": str(suggestion.suggested_by_user_id),
             "author_display_name": author.display_name,
+            "author_avatar_emoji": author.avatar_emoji,
             "yes_votes": sum(
                 1
                 for vote in date_votes
@@ -648,6 +650,7 @@ async def resync_plan(
                 "user_id": str(member.user_id),
                 "role": member.role,
                 "display_name": user.display_name,
+                "avatar_emoji": user.avatar_emoji,
                 "created_at": scalar(member.created_at),
             }
             for member, user in member_rows
@@ -658,6 +661,7 @@ async def resync_plan(
                 "creator_display_name": creator_names.get(
                     str(activity.created_by_user_id), "Former member"
                 ),
+                "creator_avatar_emoji": creator_avatars.get(str(activity.created_by_user_id)),
             }
             for activity in activities
         ],
@@ -736,6 +740,7 @@ async def resync_plan(
                 "activity_id": str(comment.activity_id),
                 "author_id": str(comment.author_id),
                 "author_display_name": author.display_name,
+                "author_avatar_emoji": author.avatar_emoji,
                 "body": comment.body,
                 "version": comment.version,
                 "deleted_at": scalar(comment.deleted_at),
@@ -750,6 +755,7 @@ async def resync_plan(
                 "activity_id": str(suggestion.activity_id),
                 "author_id": str(suggestion.author_id),
                 "author_display_name": author.display_name,
+                "author_avatar_emoji": author.avatar_emoji,
                 "suggestion_type": suggestion.suggestion_type,
                 "proposed_changes_json": suggestion.proposed_changes_json,
                 "message": suggestion.message,
@@ -764,6 +770,7 @@ async def resync_plan(
                 "status": availability.status,
                 "user_id": str(availability.user_id),
                 "member_display_name": member.display_name,
+                "member_avatar_emoji": member.avatar_emoji,
                 "is_current_user": availability.user_id == membership.user_id,
             }
             for availability, member in availability_rows
@@ -783,6 +790,7 @@ async def resync_plan(
                 "status": suggestion.status,
                 "author_id": str(suggestion.suggested_by_user_id),
                 "author_display_name": author.display_name,
+                "author_avatar_emoji": author.avatar_emoji,
                 "created_at": scalar(suggestion.created_at),
             }
             for suggestion, author in plan_suggestions
