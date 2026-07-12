@@ -13,7 +13,7 @@ from app.db.base import get_session
 from app.models.expense import Expense, ExpenseSplit
 from app.models.plan import PlanMember
 from app.models.user import User
-from app.services.event_service import append_plan_event
+from app.services.event_service import append_plan_event, broadcast_committed_plan_event
 from app.services.idempotency_service import claim_operation, complete_operation, fail_operation
 from app.services.ledger_service import plan_balances, reverse_expense_ledger, write_expense_ledger
 from app.services.planning_service import require_mutable_plan
@@ -184,7 +184,7 @@ async def create_expense(
             await complete_operation(
                 session, claim, expense.id, body, response_status=status.HTTP_201_CREATED
             )
-            await append_plan_event(
+            event = await append_plan_event(
                 session,
                 plan_id=plan_id,
                 actor_id=user.id,
@@ -210,6 +210,7 @@ async def create_expense(
         await session.commit()
         raise
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return body
 
 
@@ -280,7 +281,7 @@ async def patch_expense(
             await complete_operation(
                 session, claim, expense.id, body, response_status=status.HTTP_200_OK
             )
-            await append_plan_event(
+            event = await append_plan_event(
                 session,
                 plan_id=plan_id,
                 actor_id=user.id,
@@ -305,6 +306,7 @@ async def patch_expense(
         await session.commit()
         raise
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return body
 
 
@@ -353,7 +355,7 @@ async def delete_expense(
                 {"deleted": True},
                 response_status=status.HTTP_204_NO_CONTENT,
             )
-            await append_plan_event(
+            event = await append_plan_event(
                 session,
                 plan_id=plan_id,
                 actor_id=user.id,
@@ -378,3 +380,4 @@ async def delete_expense(
         await session.commit()
         raise
     await session.commit()
+    await broadcast_committed_plan_event(event)

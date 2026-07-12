@@ -111,7 +111,8 @@ def test_concurrent_date_suggestion_accept_increments_versions_once() -> None:
     assert after["plan"]["planning_version"] == before["plan"]["planning_version"] + 1
     assert after["date_suggestions"][0]["status"] == "accepted"
     assert after["date_suggestions"][0]["yes_votes"] == 1
-    assert len(after["latest_plan_events"]) == len(before["latest_plan_events"])
+    assert len(after["latest_plan_events"]) == len(before["latest_plan_events"]) + 1
+    assert after["latest_plan_events"][0]["event_type"] == "date_suggestion.accepted"
 
 
 def test_date_suggestion_accept_vs_dismiss_has_single_terminal_winner() -> None:
@@ -248,7 +249,8 @@ def test_concurrent_plan_suggestion_accept_applies_once() -> None:
         == owner_id
     )
     assert any(member["role"] == "co_owner" for member in after["members"])
-    assert after["latest_plan_events"] == before["latest_plan_events"]
+    assert len(after["latest_plan_events"]) == len(before["latest_plan_events"]) + 1
+    assert after["latest_plan_events"][0]["event_type"] == "plan_suggestion.accepted"
 
 
 def test_plan_suggestion_accept_vs_dismiss_has_single_terminal_winner() -> None:

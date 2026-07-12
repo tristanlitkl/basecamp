@@ -28,7 +28,7 @@ from app.models.plan import (
 )
 from app.models.user import User
 from app.models.vote import ActivityVote
-from app.services.event_service import append_plan_event
+from app.services.event_service import append_plan_event, broadcast_committed_plan_event
 from app.services.planning_service import bump_planning_version, require_mutable_plan
 
 router = APIRouter(tags=["plans"])
@@ -232,7 +232,7 @@ async def create_plan(
 
     membership = PlanMember(plan_id=plan.id, user_id=user.id, role="owner")
     session.add(membership)
-    await append_plan_event(
+    event = await append_plan_event(
         session,
         plan_id=plan.id,
         actor_id=user.id,
@@ -243,6 +243,7 @@ async def create_plan(
         payload_json={"title": plan.title},
     )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     await session.refresh(plan)
     return serialize_plan(plan, "owner")
 
@@ -282,7 +283,7 @@ async def patch_plan(
     } & changes.keys():
         await bump_planning_version(session, plan_id)
         await session.refresh(plan)
-    await append_plan_event(
+    event = await append_plan_event(
         session,
         plan_id=plan_id,
         actor_id=user.id,
@@ -292,6 +293,7 @@ async def patch_plan(
         resource_version_after=plan.version,
     )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return serialize_plan(plan, membership.role)
 
 
@@ -322,7 +324,7 @@ async def set_plan_lifecycle(
         raise HTTPException(
             status_code=409, detail={"error": "version_conflict_or_invalid_lifecycle"}
         )
-    await append_plan_event(
+    event = await append_plan_event(
         session,
         plan_id=plan_id,
         actor_id=membership.user_id,
@@ -332,6 +334,7 @@ async def set_plan_lifecycle(
         resource_version_after=plan.version,
     )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return serialize_plan(plan, membership.role)
 
 

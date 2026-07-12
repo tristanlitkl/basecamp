@@ -24,6 +24,7 @@ type UsePlanSocketOptions = {
   planId: string;
   token?: string;
   onSnapshot: (snapshot: ResyncSnapshot) => void;
+  onPlanEvent?: () => Promise<void> | void;
   onAuthFailure: () => void;
   onAuthorizationFailure?: () => void;
   refreshToken?: () => Promise<string | undefined>;
@@ -33,6 +34,7 @@ export function usePlanSocket({
   planId,
   token,
   onSnapshot,
+  onPlanEvent,
   onAuthFailure,
   onAuthorizationFailure,
   refreshToken = refreshAppJwt
@@ -53,8 +55,12 @@ export function usePlanSocket({
   const refreshGenerationRef = useRef<number | null>(null);
   const refreshTokenRef = useRef(refreshToken);
   refreshTokenRef.current = refreshToken;
-  const callbacksRef = useRef({ onSnapshot, onAuthFailure, onAuthorizationFailure });
-  callbacksRef.current = { onSnapshot, onAuthFailure, onAuthorizationFailure };
+  const callbacksRef = useRef({ onSnapshot, onPlanEvent, onAuthFailure, onAuthorizationFailure });
+  callbacksRef.current = { onSnapshot, onPlanEvent, onAuthFailure, onAuthorizationFailure };
+  const seenEventIdsRef = useRef(new Set<string>());
+  const highestEventSequenceRef = useRef(0);
+  const eventSyncInFlightRef = useRef(false);
+  const eventSyncQueuedRef = useRef(false);
 
   const clearTimers = useCallback(() => {
     for (const timer of [retryTimerRef, wakeTimerRef, handshakeTimerRef]) {
@@ -63,6 +69,23 @@ export function usePlanSocket({
         timer.current = null;
       }
     }
+  }, []);
+
+  const queuePlanEventResync = useCallback(() => {
+    if (!callbacksRef.current.onPlanEvent || disposedRef.current || terminalRef.current) return;
+    eventSyncQueuedRef.current = true;
+    if (eventSyncInFlightRef.current) return;
+    eventSyncInFlightRef.current = true;
+    void (async () => {
+      try {
+        while (eventSyncQueuedRef.current && !disposedRef.current && !terminalRef.current) {
+          eventSyncQueuedRef.current = false;
+          await callbacksRef.current.onPlanEvent?.();
+        }
+      } finally {
+        eventSyncInFlightRef.current = false;
+      }
+    })();
   }, []);
 
   const connectRef = useRef<(manual?: boolean) => void>(() => undefined);
@@ -170,15 +193,39 @@ export function usePlanSocket({
 
     socket.onmessage = async (event) => {
       if (!isCurrent()) return;
-      let message: { type?: string };
+      let message: { type?: string; plan_id?: string; event_id?: string; event_sequence?: number };
       try {
         message = JSON.parse(String(event.data)) as { type?: string };
       } catch {
         return;
       }
-      if (message.type !== "connected") return;
+      if (message.type === "plan_event") {
+        if (message.plan_id !== planId || !message.event_id) return;
+        if (seenEventIdsRef.current.has(message.event_id)) return;
+        if (
+          typeof message.event_sequence === "number" &&
+          message.event_sequence <= highestEventSequenceRef.current
+        ) return;
+        seenEventIdsRef.current.add(message.event_id);
+        if (seenEventIdsRef.current.size > 200) {
+          const oldest = seenEventIdsRef.current.values().next().value;
+          if (oldest) seenEventIdsRef.current.delete(oldest);
+        }
+        if (typeof message.event_sequence === "number") {
+          highestEventSequenceRef.current = message.event_sequence;
+        }
+        queuePlanEventResync();
+        return;
+      }
+      if (message.type !== "connected") {
+        // Unknown messages are invalidations too; recover through authoritative REST.
+        queuePlanEventResync();
+        return;
+      }
 
       clearTimers();
+      seenEventIdsRef.current.clear();
+      highestEventSequenceRef.current = 0;
       setConnectionState("syncing");
       try {
         const snapshot = await resyncPlan(currentToken, planId);
@@ -267,7 +314,7 @@ export function usePlanSocket({
         socket.close();
       }
     };
-  }, [clearTimers, planId]);
+  }, [clearTimers, planId, queuePlanEventResync]);
 
   useEffect(() => {
     if (token === propTokenRef.current) return;

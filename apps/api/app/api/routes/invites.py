@@ -15,7 +15,7 @@ from app.db.base import get_session
 from app.models.invite import PlanInvite
 from app.models.plan import Plan, PlanMember
 from app.models.user import User
-from app.services.event_service import append_plan_event
+from app.services.event_service import append_plan_event, broadcast_committed_plan_event
 from app.services.planning_service import require_mutable_plan
 
 router = APIRouter(tags=["invites"])
@@ -80,7 +80,7 @@ async def create_invite(
     )
     session.add(invite)
     await session.flush()
-    await append_plan_event(
+    event = await append_plan_event(
         session,
         plan_id=plan_id,
         actor_id=owner_membership.user_id,
@@ -90,6 +90,7 @@ async def create_invite(
         resource_version_after=None,
     )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return InviteResponse(token=token, plan_id=plan_id)
 
 
@@ -123,7 +124,7 @@ async def join_invite(
         membership = PlanMember(plan_id=invite.plan_id, user_id=user.id, role="member")
         session.add(membership)
         await session.flush()
-        await append_plan_event(
+        event = await append_plan_event(
             session,
             plan_id=invite.plan_id,
             actor_id=user.id,
@@ -133,6 +134,7 @@ async def join_invite(
             resource_version_after=None,
         )
         await session.commit()
+        await broadcast_committed_plan_event(event)
     elif payload.display_name is not None:
         user.display_name = payload.display_name
         if payload.avatar_emoji is not None:

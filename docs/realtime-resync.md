@@ -13,3 +13,15 @@ WebSocket messages are notifications, not authority. The source of truth is Post
   `min(2000 * 2^attempt + random(0, 1000), 30000)`.
 - The first connection attempt allows a 55 second handshake window for Render cold starts.
 - After repeated reconnect failures, the UI stops automatic retries and shows manual retry.
+
+## Phase 1C Rules
+
+- Each authenticated member socket joins a process-local room keyed by plan ID.
+- Room broadcasts iterate a copied socket snapshot and evict sockets that fail a send.
+- A broadcast follows a successful transaction commit and persisted `plan_events` row;
+  it is an invalidation notification only.
+- Clients deduplicate invalidation event IDs, ignore stale process-local event sequences,
+  and call authoritative `/resync` before replacing plan state.
+- Removing a member closes that member's active plan sockets with
+  `plan_membership_required`; refreshed and expired JWT handling continues to use the
+  existing authentication lifecycle.

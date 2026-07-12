@@ -38,12 +38,24 @@ class FakeWebSocket {
   connected() {
     this.onmessage?.({ data: JSON.stringify({ type: "connected" }) } as MessageEvent);
   }
+
+  planEvent(eventId = "event-1", sequence = 1) {
+    this.onmessage?.({
+      data: JSON.stringify({
+        type: "plan_event",
+        plan_id: "plan-1",
+        event_id: eventId,
+        event_sequence: sequence
+      })
+    } as MessageEvent);
+  }
 }
 
 const options = () => ({
   planId: "plan-1",
   token: "jwt-value",
   onSnapshot: vi.fn(),
+  onPlanEvent: vi.fn(),
   onAuthFailure: vi.fn(),
   onAuthorizationFailure: vi.fn()
 });
@@ -136,6 +148,35 @@ describe("usePlanSocket lifecycle", () => {
       await Promise.resolve();
     });
     expect(result.current.nextRetryMs).toBe(2000);
+  });
+
+  it("deduplicates and ignores stale realtime invalidations", async () => {
+    const callbacks = options();
+    renderHook(() => usePlanSocket(callbacks));
+    const socket = FakeWebSocket.instances[0];
+    await act(async () => {
+      socket.planEvent("first", 2);
+      socket.planEvent("first", 3);
+      socket.planEvent("older", 1);
+      socket.planEvent("second", 4);
+      await Promise.resolve();
+    });
+    expect(callbacks.onPlanEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it("serializes event resync and recovers from an unknown invalidation", async () => {
+    let release!: () => void;
+    const callbacks = options();
+    callbacks.onPlanEvent.mockReturnValue(new Promise<void>((resolve) => { release = resolve; }));
+    renderHook(() => usePlanSocket(callbacks));
+    const socket = FakeWebSocket.instances[0];
+    socket.planEvent("first", 1);
+    socket.planEvent("second", 2);
+    socket.onmessage?.({ data: JSON.stringify({ type: "future_event" }) } as MessageEvent);
+    await act(async () => Promise.resolve());
+    expect(callbacks.onPlanEvent).toHaveBeenCalledTimes(1);
+    await act(async () => { release(); await Promise.resolve(); });
+    expect(callbacks.onPlanEvent).toHaveBeenCalledTimes(2);
   });
 
   it("backs off after failed resync instead of recreating during render", async () => {

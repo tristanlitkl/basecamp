@@ -30,6 +30,31 @@ Bootstrap rule: do not add generic CRUD resources or placeholder endpoints outsi
 - Sends one message on success: `{"type":"connected"}`.
 - The connected message is not authoritative state. Clients must call `/resync`.
 
+## Phase 1C Realtime invalidations
+
+After a committed plan-visible mutation and its `plan_events` insert, every
+current member socket in the plan's single-instance in-memory room receives a
+non-authoritative invalidation:
+
+```json
+{
+  "type": "plan_event",
+  "event_id": "uuid",
+  "event_sequence": 1,
+  "plan_id": "uuid",
+  "event_type": "activity.updated",
+  "resource_type": "activity",
+  "resource_id": "uuid",
+  "resource_version_after": 2
+}
+```
+
+`event_sequence` is scoped to the current backend process and connection
+generation. Clients deduplicate event IDs, discard stale sequence values, and
+use `GET /plans/{plan_id}/resync` to replace local state; the WebSocket packet
+is never authoritative data. Rapid reorder notices for the same itinerary item
+may be coalesced for 200 ms after their commits.
+
 ## Phase 1B Balances
 
 `GET /plans/{plan_id}/balances`

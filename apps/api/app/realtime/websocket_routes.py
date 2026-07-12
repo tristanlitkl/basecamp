@@ -10,6 +10,7 @@ from app.core.security import decode_app_jwt
 from app.db.base import AsyncSessionLocal
 from app.models.plan import PlanMember
 from app.models.user import User
+from app.realtime.connection_manager import connection_manager
 
 router = APIRouter()
 
@@ -51,11 +52,13 @@ async def plan_socket(websocket: WebSocket, plan_id: UUID) -> None:
             await close_auth_failure(websocket, "plan_membership_required")
             return
 
-    await websocket.accept()
-    await websocket.send_json({"type": "connected"})
+    connection = await connection_manager.connect(websocket, user_id=user.id, plan_id=plan_id)
 
     try:
         while True:
             await websocket.receive_text()
+            connection_manager.touch(connection)
     except WebSocketDisconnect:
-        return
+        pass
+    finally:
+        await connection_manager.disconnect(plan_id, connection)

@@ -247,6 +247,15 @@ export default function PlanPage() {
       applySnapshot(next);
       if (session?.appJwt) void getPlanBalances(session.appJwt, planId).then(setBalances).catch(() => undefined);
     },
+    onPlanEvent: async () => {
+      // Realtime packets only invalidate local state; REST resync remains authoritative.
+      try {
+        await load();
+      } catch (value) {
+        if (isPlanMembershipError(value)) socket.denyAuthorization();
+        else if (isAuthenticationError(value)) socket.denyAuthentication();
+      }
+    },
     onAuthFailure: () => {
       setPlan(null);
       setAuthFailed(true);

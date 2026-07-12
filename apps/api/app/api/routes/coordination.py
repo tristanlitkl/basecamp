@@ -28,6 +28,8 @@ from app.models.plan import (
     PlanSuggestion,
 )
 from app.models.user import User
+from app.realtime.connection_manager import connection_manager
+from app.services.event_service import append_plan_event, broadcast_committed_plan_event
 from app.services.planning_service import bump_planning_version, require_mutable_plan
 from app.services.idempotency_service import claim_operation, complete_operation, fail_operation
 
@@ -200,7 +202,18 @@ async def change_member_role(
     target.role = payload.role
     body = {"user_id": str(target.user_id), "role": target.role}
     await complete_operation(session, claim, target.id, body, response_status=status.HTTP_200_OK)
+    event = await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=actor.user_id,
+        event_type="member.role_updated",
+        resource_type="plan_member",
+        resource_id=target.id,
+        resource_version_after=None,
+        client_operation_id=payload.client_operation_id,
+    )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return body
 
 
@@ -225,11 +238,26 @@ async def remove_member(
     if isinstance(claim, dict):
         return None
     target_id = target.id
+    target_user_id = target.user_id
     await session.delete(target)
     await complete_operation(
         session, claim, target_id, {"removed": True}, response_status=status.HTTP_204_NO_CONTENT
     )
+    event = await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=actor.user_id,
+        event_type="member.removed",
+        resource_type="plan_member",
+        resource_id=target_id,
+        resource_version_after=None,
+        client_operation_id=client_operation_id,
+    )
     await session.commit()
+    await connection_manager.disconnect_user(
+        plan_id, target_user_id, reason="plan_membership_required"
+    )
+    await broadcast_committed_plan_event(event)
 
 
 @router.patch("/plans/{plan_id}/vote-visibility")
@@ -250,7 +278,17 @@ async def update_vote_visibility(
     plan = result.scalar_one_or_none()
     if plan is None:
         raise HTTPException(status_code=409, detail={"error": "version_conflict"})
+    event = await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=actor.user_id,
+        event_type="plan.vote_visibility_updated",
+        resource_type="plan",
+        resource_id=plan_id,
+        resource_version_after=plan.version,
+    )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return {"vote_visibility": plan.vote_visibility, "version": plan.version}
 
 
@@ -290,7 +328,19 @@ async def create_comment(
     await complete_operation(
         session, claim, comment.id, body, response_status=status.HTTP_201_CREATED
     )
+    await session.flush()
+    event = await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        event_type="activity_comment.created",
+        resource_type="activity_comment",
+        resource_id=comment.id,
+        resource_version_after=comment.version,
+        client_operation_id=payload.client_operation_id,
+    )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return body
 
 
@@ -320,7 +370,17 @@ async def update_comment(
     comment = result.scalar_one_or_none()
     if comment is None:
         raise HTTPException(status_code=409, detail={"error": "version_conflict_or_not_author"})
+    event = await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        event_type="activity_comment.updated",
+        resource_type="activity_comment",
+        resource_id=comment.id,
+        resource_version_after=comment.version,
+    )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return {"id": str(comment.id), "version": comment.version}
 
 
@@ -351,7 +411,17 @@ async def delete_comment(
     if comment.author_id != user.id and membership.role not in {"owner", "co_owner"}:
         raise HTTPException(status_code=403, detail={"error": "comment_moderation_not_permitted"})
     comment.deleted_at = datetime.now(timezone.utc)
+    event = await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        event_type="activity_comment.deleted",
+        resource_type="activity_comment",
+        resource_id=comment.id,
+        resource_version_after=None,
+    )
     await session.commit()
+    await broadcast_committed_plan_event(event)
 
 
 @router.post(
@@ -396,7 +466,18 @@ async def create_suggestion(
     await complete_operation(
         session, claim, suggestion.id, body, response_status=status.HTTP_201_CREATED
     )
+    event = await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        event_type="activity_suggestion.created",
+        resource_type="activity_suggestion",
+        resource_id=suggestion.id,
+        resource_version_after=None,
+        client_operation_id=payload.client_operation_id,
+    )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return body
 
 
@@ -463,7 +544,18 @@ async def decide_suggestion(
     await complete_operation(
         session, claim, suggestion.id, body, response_status=status.HTTP_200_OK
     )
+    event = await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        event_type=f"activity_suggestion.{decision}",
+        resource_type="activity_suggestion",
+        resource_id=suggestion.id,
+        resource_version_after=None,
+        client_operation_id=payload.client_operation_id,
+    )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return body
 
 
@@ -544,7 +636,18 @@ async def upsert_availability(
         )
     )
     await session.execute(statement)
+    event = await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        event_type="date_availability.updated",
+        resource_type="date_availability",
+        resource_id=None,
+        resource_version_after=None,
+        payload_json={"date": payload.date.isoformat()},
+    )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return {"date": payload.date.isoformat(), "status": payload.status}
 
 
@@ -580,7 +683,18 @@ async def create_date_suggestion(
     await complete_operation(
         session, claim, suggestion.id, body, response_status=status.HTTP_201_CREATED
     )
+    event = await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        event_type="date_suggestion.created",
+        resource_type="date_suggestion",
+        resource_id=suggestion.id,
+        resource_version_after=None,
+        client_operation_id=payload.client_operation_id,
+    )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return body
 
 
@@ -592,7 +706,7 @@ async def decide_date_suggestion(
     user: User,
     session: AsyncSession,
     claim: Any = None,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], Any]:
     suggestion = (
         await session.execute(
             select(PlanDateSuggestion)
@@ -629,7 +743,17 @@ async def decide_date_suggestion(
     await complete_operation(
         session, claim, suggestion.id, body, response_status=status.HTTP_200_OK
     )
-    return body
+    event = await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        event_type=f"date_suggestion.{decision}",
+        resource_type="date_suggestion",
+        resource_id=suggestion.id,
+        resource_version_after=None,
+        client_operation_id=payload.client_operation_id,
+    )
+    return body, event
 
 
 async def run_date_suggestion_decision(
@@ -656,7 +780,7 @@ async def run_date_suggestion_decision(
     if isinstance(claim, dict):
         return claim
     try:
-        body = await decide_date_suggestion(
+        body, event = await decide_date_suggestion(
             plan_id, suggestion_id, decision, payload, user, session, claim
         )
     except HTTPException as error:
@@ -670,6 +794,7 @@ async def run_date_suggestion_decision(
         await session.commit()
         raise
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return body
 
 
@@ -755,7 +880,18 @@ async def archive_date_suggestion(
     await complete_operation(
         session, claim, suggestion.id, body, response_status=status.HTTP_200_OK
     )
+    event = await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        event_type="date_suggestion.archived",
+        resource_type="date_suggestion",
+        resource_id=suggestion.id,
+        resource_version_after=None,
+        client_operation_id=payload.client_operation_id,
+    )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return body
 
 
@@ -801,7 +937,18 @@ async def vote_date_suggestion(
     await complete_operation(
         session, claim, suggestion_id, body, response_status=status.HTTP_200_OK
     )
+    event = await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        event_type="date_suggestion.vote_updated",
+        resource_type="date_suggestion_vote",
+        resource_id=suggestion_id,
+        resource_version_after=None,
+        client_operation_id=payload.client_operation_id,
+    )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return body
 
 
@@ -835,7 +982,18 @@ async def create_plan_suggestion(
     await complete_operation(
         session, claim, suggestion.id, body, response_status=status.HTTP_201_CREATED
     )
+    event = await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        event_type="plan_suggestion.created",
+        resource_type="plan_suggestion",
+        resource_id=suggestion.id,
+        resource_version_after=None,
+        client_operation_id=payload.client_operation_id,
+    )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return body
 
 
@@ -847,7 +1005,7 @@ async def decide_plan_suggestion(
     user: User,
     session: AsyncSession,
     claim: Any,
-) -> dict[str, str]:
+) -> tuple[dict[str, str], Any]:
     suggestion = (
         await session.execute(
             select(PlanSuggestion)
@@ -899,7 +1057,17 @@ async def decide_plan_suggestion(
     await complete_operation(
         session, claim, suggestion.id, body, response_status=status.HTTP_200_OK
     )
-    return body
+    event = await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        event_type=f"plan_suggestion.{decision}",
+        resource_type="plan_suggestion",
+        resource_id=suggestion.id,
+        resource_version_after=None,
+        client_operation_id=payload.client_operation_id,
+    )
+    return body, event
 
 
 async def plan_suggestion_decision_endpoint(
@@ -925,7 +1093,7 @@ async def plan_suggestion_decision_endpoint(
     if isinstance(claim, dict):
         return claim
     try:
-        body = await decide_plan_suggestion(
+        body, event = await decide_plan_suggestion(
             plan_id, suggestion_id, decision, payload, user, session, claim
         )
     except HTTPException as error:
@@ -939,6 +1107,7 @@ async def plan_suggestion_decision_endpoint(
         await session.commit()
         raise
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return body
 
 
@@ -1010,5 +1179,16 @@ async def archive_plan_suggestion(
     await complete_operation(
         session, claim, suggestion.id, body, response_status=status.HTTP_200_OK
     )
+    event = await append_plan_event(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        event_type="plan_suggestion.archived",
+        resource_type="plan_suggestion",
+        resource_id=suggestion.id,
+        resource_version_after=None,
+        client_operation_id=payload.client_operation_id,
+    )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return body

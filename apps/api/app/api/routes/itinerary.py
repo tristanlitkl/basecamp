@@ -16,7 +16,7 @@ from app.models.activity import Activity
 from app.models.itinerary import ItineraryItem
 from app.models.plan import PlanMember
 from app.models.user import User
-from app.services.event_service import append_plan_event
+from app.services.event_service import append_plan_event, broadcast_committed_plan_event
 from app.services.idempotency_service import claim_operation, complete_operation, fail_operation
 from app.services.planning_service import bump_planning_version, require_mutable_plan
 
@@ -156,7 +156,7 @@ async def create_item(
     await bump_planning_version(session, plan_id)
     body = response(item)
     await complete_operation(session, claim, item.id, body, response_status=status.HTTP_201_CREATED)
-    await append_plan_event(
+    event = await append_plan_event(
         session,
         plan_id=plan_id,
         actor_id=user.id,
@@ -168,6 +168,7 @@ async def create_item(
         payload_json={"position_key": str(item.position_key)},
     )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return body
 
 
@@ -198,7 +199,7 @@ async def patch_item(
     if item is None:
         raise HTTPException(status_code=409, detail={"error": "version_conflict"})
     await bump_planning_version(session, plan_id)
-    await append_plan_event(
+    event = await append_plan_event(
         session,
         plan_id=plan_id,
         actor_id=user.id,
@@ -208,6 +209,7 @@ async def patch_item(
         resource_version_after=item.version,
     )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return response(item)
 
 
@@ -267,7 +269,7 @@ async def reorder_item(
     if item is None:
         raise HTTPException(status_code=409, detail={"error": "version_conflict"})
     await bump_planning_version(session, plan_id)
-    await append_plan_event(
+    event = await append_plan_event(
         session,
         plan_id=plan_id,
         actor_id=user.id,
@@ -278,6 +280,7 @@ async def reorder_item(
         payload_json={"position_key": str(key)},
     )
     await session.commit()
+    await broadcast_committed_plan_event(event, debounce=True)
     return response(item)
 
 
@@ -303,7 +306,7 @@ async def delete_item(
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=409, detail={"error": "version_conflict"})
     await bump_planning_version(session, plan_id)
-    await append_plan_event(
+    event = await append_plan_event(
         session,
         plan_id=plan_id,
         actor_id=user.id,
@@ -313,3 +316,4 @@ async def delete_item(
         resource_version_after=None,
     )
     await session.commit()
+    await broadcast_committed_plan_event(event)

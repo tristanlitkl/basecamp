@@ -17,7 +17,7 @@ from app.models.itinerary import ItineraryItem
 from app.models.plan import PlanMember
 from app.models.user import User
 from app.models.vote import ActivityVote
-from app.services.event_service import append_plan_event
+from app.services.event_service import append_plan_event, broadcast_committed_plan_event
 from app.services.idempotency_service import claim_operation, complete_operation
 from app.services.planning_service import bump_planning_version, require_mutable_plan
 
@@ -136,7 +136,7 @@ async def create_activity(
     await complete_operation(
         session, claim, activity.id, body, response_status=status.HTTP_201_CREATED
     )
-    await append_plan_event(
+    event = await append_plan_event(
         session,
         plan_id=plan_id,
         actor_id=user.id,
@@ -148,6 +148,7 @@ async def create_activity(
         payload_json={"name": activity.name},
     )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     await session.refresh(activity)
     return ActivityResponse(**body)
 
@@ -181,7 +182,7 @@ async def patch_activity(
     if activity is None:
         raise HTTPException(status_code=409, detail={"error": "version_conflict"})
     await bump_planning_version(session, plan_id)
-    await append_plan_event(
+    event = await append_plan_event(
         session,
         plan_id=plan_id,
         actor_id=user.id,
@@ -191,6 +192,7 @@ async def patch_activity(
         resource_version_after=activity.version,
     )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return ActivityResponse(
         id=activity.id,
         plan_id=activity.plan_id,
@@ -249,7 +251,7 @@ async def delete_activity(
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=409, detail={"error": "version_conflict"})
     await bump_planning_version(session, plan_id)
-    await append_plan_event(
+    event = await append_plan_event(
         session,
         plan_id=plan_id,
         actor_id=owner_membership.user_id,
@@ -259,6 +261,7 @@ async def delete_activity(
         resource_version_after=None,
     )
     await session.commit()
+    await broadcast_committed_plan_event(event)
 
 
 @router.put("/plans/{plan_id}/activities/{activity_id}/vote", response_model=VoteResponse)
@@ -287,7 +290,7 @@ async def vote_activity(
         )
     )
     await session.execute(statement)
-    await append_plan_event(
+    event = await append_plan_event(
         session,
         plan_id=plan_id,
         actor_id=user.id,
@@ -298,4 +301,5 @@ async def vote_activity(
         payload_json={"vote": payload.vote},
     )
     await session.commit()
+    await broadcast_committed_plan_event(event)
     return VoteResponse(activity_id=activity_id, vote=payload.vote)
