@@ -134,7 +134,8 @@ describe("Phase 1B.5 planning UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
     fireEvent.change(screen.getByLabelText("Budget"), { target: { value: "10.05" } });
     fireEvent.click(screen.getByRole("button", { name: "Save constraints" }));
-    await waitFor(() => expect(patchPlan).toHaveBeenCalledWith("app-jwt", "plan-1", expect.objectContaining({ expected_version: 4, budget_cents: 1005, max_drive_minutes: 45 })));
+    await waitFor(() => expect(patchPlan).toHaveBeenCalledWith("app-jwt", "plan-1", expect.objectContaining({ expected_version: 4, budget_cents: 1005 })));
+    expect(vi.mocked(patchPlan).mock.calls[0][2]).not.toHaveProperty("max_drive_minutes");
 
     const activity = screen.getByRole("heading", { name: "Kayaking" }).closest("article")!;
     fireEvent.click(within(activity).getByRole("button", { name: "Edit" }));
@@ -322,7 +323,7 @@ describe("Phase 1B.5 planning UI", () => {
     await waitFor(() => expect(decideActivitySuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", "activity-1", "suggestion-1", "accept", 3, "operation-id"));
     fireEvent.change(screen.getByLabelText("Date"), { target: { value: "2026-07-18" } }); fireEvent.click(screen.getByRole("button", { name: "Save availability" }));
     await waitFor(() => expect(upsertDateAvailability).toHaveBeenCalled());
-    expect(screen.getByText(/suggested Jul 18, 2026–Jul 21, 2026/)).toBeTruthy();
+    expect(screen.getByText(/Jul 18, 2026 – Jul 21, 2026/)).toBeTruthy();
     fireEvent.click(screen.getAllByRole("button", { name: "Dismiss" }).at(-1)!);
     await waitFor(() => expect(decideDateSuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", "date-1", "dismiss", 4, "operation-id"));
     expect(vi.mocked(resyncPlan).mock.calls.length).toBeGreaterThan(1);
@@ -362,8 +363,6 @@ describe("Phase 1B.5 planning UI", () => {
     fireEvent.click(screen.getByText(/Discussion \(1\)/));
     expect(disclosure.open).toBe(true);
     expect(screen.getByText("Great idea")).toBeTruthy();
-    const leading = screen.getAllByText(/Aug 23, 2026/).find((element) => element.tagName === "STRONG")!.closest("article")!;
-    expect(within(leading).getByRole("button", { name: /Vote yes/ }).hasAttribute("disabled")).toBe(true);
     const open = screen.getAllByText(/Aug 20, 2026/).find((element) => element.tagName === "STRONG")!.closest("article")!;
     fireEvent.click(within(open).getByRole("button", { name: /Vote maybe/ }));
     await waitFor(() => expect(voteDateSuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", "date-later", "maybe", "operation-id"));
@@ -410,7 +409,7 @@ describe("Phase 1B.5 planning UI", () => {
     next.plan_suggestions = [{ id: "plan-idea", title: "Mountain weekend", description: null, starts_on: null, ends_on: null, budget_cents: null, max_drive_minutes: null, travel_mode: null, travel_duration_minutes: null, status: "open", author_id: "user-2", author_display_name: "Member", created_at: "2026-01-01" }];
     await renderPlan(next);
 
-    expect(screen.getByText("Accepted dates ready.")).toBeTruthy();
+    expect(screen.getByText(/Trip dates: Aug 1, 2026/)).toBeTruthy();
     expect(screen.getByText("1 open suggestion.")).toBeTruthy();
     for (const title of ["Travel window", "Travel-window poll", "Trip ideas", "Trip members", "Expenses"]) {
       const button = screen.getByRole("button", { name: `Collapse ${title}` });
@@ -485,6 +484,17 @@ describe("Phase 1B.5 planning UI", () => {
     expect(screen.getByRole("region", { name: "December 2026" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "January 2027" })).toBeTruthy();
     expect(screen.getByLabelText(/Thursday, December 31, 2026: current trip date/)).toBeTruthy();
+  });
+
+  it("does not give a historical accepted option the authoritative final-date calendar highlight", async () => {
+    const next = snapshot();
+    next.plan.starts_on = "2026-09-10T00:00:00Z";
+    next.plan.ends_on = "2026-09-12T00:00:00Z";
+    next.date_suggestions = [{ id: "historic", starts_on: "2026-08-01", ends_on: "2026-08-03", message: null, status: "accepted", author_id: "user-2", author_display_name: "Member", yes_votes: 2, maybe_votes: 0, no_votes: 0, vote: null, created_at: "2026-01-01" }];
+    await renderPlan(next);
+    expect(screen.getByLabelText(/Saturday, August 1, 2026: 0 available/)).toBeTruthy();
+    expect(screen.queryByLabelText(/Saturday, August 1, 2026: current trip date/)).toBeNull();
+    expect(screen.getByLabelText(/Thursday, September 10, 2026: current trip date/)).toBeTruthy();
   });
 
   it("groups trip ideas by the authoritative itinerary activity identifier and keeps disclosures accessible", async () => {

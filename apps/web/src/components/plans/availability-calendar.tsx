@@ -11,9 +11,7 @@ type CalendarDay = {
   unavailable: number;
   noResponse: number;
   isCurrentTripDate: boolean;
-  hasAcceptedSuggestion: boolean;
   hasOpenSuggestion: boolean;
-  hasDismissedSuggestion: boolean;
 };
 
 type AvailabilityCalendarProps = {
@@ -55,9 +53,7 @@ function sortedSuggestions(suggestions: DateSuggestion[]) {
 function availabilitySummary(day: CalendarDay) {
   const parts = [`${day.available} available`, `${day.maybe} maybe`, `${day.unavailable} unavailable`, `${day.noResponse} no response`];
   if (day.isCurrentTripDate) parts.unshift("current trip date");
-  else if (day.hasAcceptedSuggestion) parts.unshift("accepted date option");
   if (day.hasOpenSuggestion) parts.push("open date option");
-  if (day.hasDismissedSuggestion) parts.push("dismissed date option");
   return parts.join(", ");
 }
 
@@ -93,9 +89,7 @@ export function AvailabilityCalendar({ plan, members, availability, suggestions 
     return {
       date, ...counts, noResponse: Math.max(0, members.length - entries.length),
       isCurrentTripDate: inRange(date, plan.starts_on, plan.ends_on),
-      hasAcceptedSuggestion: suggestions.some((suggestion) => suggestion.status === "accepted" && inRange(date, suggestion.starts_on, suggestion.ends_on)),
       hasOpenSuggestion: suggestions.some((suggestion) => suggestion.status === "open" && inRange(date, suggestion.starts_on, suggestion.ends_on)),
-      hasDismissedSuggestion: suggestions.some((suggestion) => suggestion.status === "dismissed" && inRange(date, suggestion.starts_on, suggestion.ends_on))
     };
   };
   const selected = selectedDate ? dayFor(selectedDate) : null;
@@ -118,7 +112,7 @@ export function AvailabilityCalendar({ plan, members, availability, suggestions 
         return <section className="calendar-month" key={month} aria-label={dateLabel(firstDay, { month: "long", year: "numeric" })}>
           <h3>{dateLabel(firstDay, { month: "long", year: "numeric" })}</h3><div className="calendar-weekdays" aria-hidden="true">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((weekday) => <span key={weekday}>{weekday}</span>)}</div>
           <div className="calendar-days">{Array.from({ length: fromDayKey(firstDay).getUTCDay() }, (_, index) => <span className="calendar-blank" key={`blank-${index}`} />)}
-            {days.map((day) => <button aria-label={`${fullDateLabel(day.date)}: ${availabilitySummary(day)}. Select to view member details.`} aria-pressed={selectedDate === day.date} className={`calendar-day${day.isCurrentTripDate ? " is-current" : ""}${!day.isCurrentTripDate && day.hasAcceptedSuggestion ? " is-accepted" : ""}${day.hasOpenSuggestion ? " has-open-option" : ""}${day.hasDismissedSuggestion ? " has-dismissed-option" : ""}`} key={day.date} onClick={() => setSelectedDate(day.date)} type="button"><time dateTime={day.date}>{fromDayKey(day.date).getUTCDate()}</time><span aria-hidden="true" className="calendar-availability-count">✓{day.available}</span><span aria-hidden="true" className="calendar-cell-markers">{day.maybe > 0 ? "❓" : ""}{day.unavailable > 0 ? "×" : ""}{day.noResponse > 0 ? "–" : ""}</span></button>)}</div>
+            {days.map((day) => <button aria-label={`${fullDateLabel(day.date)}: ${availabilitySummary(day)}. Select to view member details.`} aria-pressed={selectedDate === day.date} className={`calendar-day${day.isCurrentTripDate ? " is-current" : ""}${day.hasOpenSuggestion ? " has-open-option" : ""}`} key={day.date} onClick={() => setSelectedDate(day.date)} type="button"><time dateTime={day.date}>{fromDayKey(day.date).getUTCDate()}</time><span aria-hidden="true" className="calendar-availability-count">✓{day.available}</span><span aria-hidden="true" className="calendar-cell-markers">{day.maybe > 0 ? "❓" : ""}{day.unavailable > 0 ? "×" : ""}{day.noResponse > 0 ? "–" : ""}</span></button>)}</div>
         </section>;
       })}
     </div>
@@ -126,4 +120,4 @@ export function AvailabilityCalendar({ plan, members, availability, suggestions 
   </section>;
 }
 
-function CalendarLegend() { return <ul aria-label="Calendar legend" className="calendar-legend"><li><span aria-hidden="true" className="legend-mark legend-current">✓</span>Current trip date</li><li><span aria-hidden="true" className="legend-mark legend-accepted">✓</span>Accepted date option</li><li><span aria-hidden="true" className="legend-mark legend-option">··</span>Open date option</li><li><span aria-hidden="true" className="legend-mark">✓</span>Available</li><li><span aria-hidden="true" className="legend-mark">❓</span>Maybe</li><li><span aria-hidden="true" className="legend-mark">×</span>Unavailable</li><li><span aria-hidden="true" className="legend-mark">–</span>No response</li></ul>; }
+function CalendarLegend() { return <ul aria-label="Calendar legend" className="calendar-legend"><li><span aria-hidden="true" className="legend-mark legend-current">✓</span>Current trip date</li><li><span aria-hidden="true" className="legend-mark legend-option">··</span>Open date option</li><li><span aria-hidden="true" className="legend-mark">✓</span>Available</li><li><span aria-hidden="true" className="legend-mark">❓</span>Maybe</li><li><span aria-hidden="true" className="legend-mark">×</span>Unavailable</li><li><span aria-hidden="true" className="legend-mark">–</span>No response</li></ul>; }

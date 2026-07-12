@@ -473,10 +473,14 @@ async def resync_plan(
         .scalars()
         .all()
     )
+    # Reversed expenses remain in the immutable ledger/audit trail, not in the
+    # active workspace projection returned by authoritative resync.
     expenses = (
         (
             await session.execute(
-                select(Expense).where(Expense.plan_id == plan_id).order_by(Expense.created_at.asc())
+                select(Expense)
+                .where(Expense.plan_id == plan_id, Expense.status == "active")
+                .order_by(Expense.created_at.asc())
             )
         )
         .scalars()

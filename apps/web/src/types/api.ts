@@ -115,8 +115,8 @@ export type DateAvailability = {
   member_display_name: string;
   is_current_user: boolean;
 };
-export type DateSuggestion = { id: string; starts_on: string; ends_on: string; message: string | null; status: "open" | "accepted" | "dismissed"; author_id: string; author_display_name: string; yes_votes: number; maybe_votes: number; no_votes: number; vote: "yes" | "maybe" | "no" | null; created_at?: string };
-export type PlanSuggestion = { id: string; title: string; description: string | null; starts_on: string | null; ends_on: string | null; budget_cents: number | null; max_drive_minutes: number | null; travel_mode: "car" | "plane" | "train" | "bus" | null; travel_duration_minutes: number | null; status: "open" | "accepted" | "dismissed"; author_id: string; author_display_name: string; created_at: string };
+export type DateSuggestion = { id: string; starts_on: string; ends_on: string; message: string | null; status: "open" | "accepted" | "dismissed" | "archived"; author_id: string; author_display_name: string; yes_votes: number; maybe_votes: number; no_votes: number; vote: "yes" | "maybe" | "no" | null; created_at?: string };
+export type PlanSuggestion = { id: string; title: string; description: string | null; starts_on: string | null; ends_on: string | null; budget_cents: number | null; max_drive_minutes: number | null; travel_mode: "car" | "plane" | "train" | "bus" | null; travel_duration_minutes: number | null; status: "open" | "accepted" | "dismissed" | "archived"; author_id: string; author_display_name: string; created_at: string };
 export type PlanEvent = {
   id: string;
   plan_id: string;

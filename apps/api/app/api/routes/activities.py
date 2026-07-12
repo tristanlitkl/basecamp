@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, require_plan_member, require_plan_owner
 from app.db.base import get_session
 from app.models.activity import Activity
+from app.models.coordination import ActivityComment, ActivitySuggestion
+from app.models.itinerary import ItineraryItem
 from app.models.plan import PlanMember
 from app.models.user import User
 from app.models.vote import ActivityVote
@@ -212,7 +214,28 @@ async def delete_activity(
             status_code=status.HTTP_403_FORBIDDEN, detail={"error": "owner_role_required"}
         )
 
-    # Deletion remains conditional too: a stale version must never erase a newer edit.
+    # An itinerary item is a deliberate schedule commitment.  Require it to be
+    # removed first rather than silently changing the itinerary while deleting
+    # an idea. Plan events remain intact as historical audit records.
+    itinerary_item = (
+        await session.execute(
+            select(ItineraryItem.id).where(
+                ItineraryItem.plan_id == plan_id, ItineraryItem.activity_id == activity_id
+            )
+        )
+    ).scalar_one_or_none()
+    if itinerary_item is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": "activity_in_itinerary_remove_itinerary_item_first"},
+        )
+
+    # The operational child rows are removed in this transaction.  Audit rows
+    # are intentionally not touched: their resource ID preserves history.
+    await session.execute(delete(ActivityComment).where(ActivityComment.activity_id == activity_id))
+    await session.execute(
+        delete(ActivitySuggestion).where(ActivitySuggestion.activity_id == activity_id)
+    )
     await session.execute(delete(ActivityVote).where(ActivityVote.activity_id == activity_id))
     result = await session.execute(
         delete(Activity)

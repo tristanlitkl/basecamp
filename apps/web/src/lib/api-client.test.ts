@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   createExpense,
+  createDateSuggestion,
   createItineraryItem,
   deleteActivityAndResync,
   deleteExpense,
@@ -127,5 +128,14 @@ describe("API app JWT refresh", () => {
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({ amount_cents: 1005, participant_user_ids: ["u1", "u2"], client_operation_id: "create-op" });
     expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toMatchObject({ amount_cents: 1234, expected_version: 6, client_operation_id: "edit-op" });
     expect(fetchMock.mock.calls[2][0]).toContain("expected_version=7&client_operation_id=delete-op");
+  });
+
+  it("serializes cross-month and cross-year date ranges without transforming either endpoint", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({}), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await createDateSuggestion("token", "plan-1", "2026-07-29", "2026-08-03", "month-op");
+    await createDateSuggestion("token", "plan-1", "2026-12-30", "2027-01-04", "year-op");
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({ starts_on: "2026-07-29", ends_on: "2026-08-03", client_operation_id: "month-op" });
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toMatchObject({ starts_on: "2026-12-30", ends_on: "2027-01-04", client_operation_id: "year-op" });
   });
 });

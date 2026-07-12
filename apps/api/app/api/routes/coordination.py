@@ -103,6 +103,10 @@ class DateSuggestionVoteUpsert(BaseModel):
     client_operation_id: str | None = Field(default=None, max_length=120)
 
 
+class ArchiveSuggestionRequest(BaseModel):
+    client_operation_id: str | None = Field(default=None, max_length=120)
+
+
 class PlanSuggestionCreate(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     description: str | None = Field(default=None, max_length=4000)
@@ -696,6 +700,64 @@ async def dismiss_date_suggestion(
     )
 
 
+@router.post("/plans/{plan_id}/date-suggestions/{suggestion_id}/archive")
+async def archive_date_suggestion(
+    plan_id: UUID,
+    suggestion_id: UUID,
+    payload: ArchiveSuggestionRequest,
+    user: User = Depends(get_current_user),
+    actor: PlanMember = Depends(require_plan_owner),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
+    """Hide a poll option without deleting its votes or audit history."""
+    claim = await claim_operation(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        client_operation_id=payload.client_operation_id,
+        payload={"suggestion_id": suggestion_id, "action": "archive"},
+        resource_type="date_suggestion_archive",
+    )
+    if isinstance(claim, dict):
+        return claim
+    suggestion = (
+        await session.execute(
+            select(PlanDateSuggestion)
+            .where(PlanDateSuggestion.id == suggestion_id, PlanDateSuggestion.plan_id == plan_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if suggestion is None or suggestion.status == "archived":
+        detail = {"error": "date_suggestion_not_archivable"}
+        await fail_operation(
+            session, claim, response_status=409, response=detail, failure_type="permanent"
+        )
+        await session.commit()
+        raise HTTPException(status_code=409, detail=detail)
+    plan = (await session.execute(select(Plan).where(Plan.id == plan_id))).scalar_one()
+    current_range = (
+        plan.starts_on is not None
+        and plan.ends_on is not None
+        and suggestion.starts_on == plan.starts_on.date()
+        and suggestion.ends_on == plan.ends_on.date()
+    )
+    if current_range:
+        detail = {"error": "current_date_suggestion_cannot_be_archived"}
+        await fail_operation(
+            session, claim, response_status=409, response=detail, failure_type="permanent"
+        )
+        await session.commit()
+        raise HTTPException(status_code=409, detail=detail)
+    suggestion.status = "archived"
+    suggestion.archived_at = datetime.now(timezone.utc)
+    body = {"id": str(suggestion.id), "status": suggestion.status}
+    await complete_operation(
+        session, claim, suggestion.id, body, response_status=status.HTTP_200_OK
+    )
+    await session.commit()
+    return body
+
+
 @router.put("/plans/{plan_id}/date-suggestions/{suggestion_id}/vote")
 async def vote_date_suggestion(
     plan_id: UUID,
@@ -905,3 +967,47 @@ async def dismiss_plan_suggestion(
     return await plan_suggestion_decision_endpoint(
         plan_id, suggestion_id, "dismissed", payload, user, session
     )
+
+
+@router.post("/plans/{plan_id}/plan-suggestions/{suggestion_id}/archive")
+async def archive_plan_suggestion(
+    plan_id: UUID,
+    suggestion_id: UUID,
+    payload: ArchiveSuggestionRequest,
+    user: User = Depends(get_current_user),
+    actor: PlanMember = Depends(require_plan_owner),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
+    """Hide a completed plan-idea request without undoing its applied change."""
+    claim = await claim_operation(
+        session,
+        plan_id=plan_id,
+        actor_id=user.id,
+        client_operation_id=payload.client_operation_id,
+        payload={"suggestion_id": suggestion_id, "action": "archive"},
+        resource_type="plan_suggestion_archive",
+    )
+    if isinstance(claim, dict):
+        return claim
+    suggestion = (
+        await session.execute(
+            select(PlanSuggestion)
+            .where(PlanSuggestion.id == suggestion_id, PlanSuggestion.plan_id == plan_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if suggestion is None or suggestion.status in {"open", "archived"}:
+        detail = {"error": "plan_suggestion_not_archivable"}
+        await fail_operation(
+            session, claim, response_status=409, response=detail, failure_type="permanent"
+        )
+        await session.commit()
+        raise HTTPException(status_code=409, detail=detail)
+    suggestion.status = "archived"
+    suggestion.archived_at = datetime.now(timezone.utc)
+    body = {"id": str(suggestion.id), "status": suggestion.status}
+    await complete_operation(
+        session, claim, suggestion.id, body, response_status=status.HTTP_200_OK
+    )
+    await session.commit()
+    return body
