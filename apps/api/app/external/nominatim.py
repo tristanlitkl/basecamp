@@ -1,12 +1,16 @@
 """Nominatim provider client with the public-service rate limit required by Phase 2."""
 
 import asyncio
+import os
 import time
 from typing import Any
 
 import httpx
 
-NOMINATIM_USER_AGENT = "Basecamp/1.0 (student portfolio project; contact: basecamp@example.invalid)"
+NOMINATIM_USER_AGENT = os.getenv(
+    "NOMINATIM_USER_AGENT",
+    "Basecamp/1.0 (student portfolio project; contact: triskieranli@gmail.com)",
+)
 _rate_lock = asyncio.Lock()
 _last_live_request = 0.0
 

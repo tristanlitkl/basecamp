@@ -400,6 +400,38 @@ describe("Phase 1B.5 planning UI", () => {
     expect(screen.getByText("No trip notes yet.")).toBeTruthy();
   });
 
+  it("keeps Trip Notes tiles compact and opens full long notes with role permissions", async () => {
+    const longNotes = "Long trip note ".repeat(100);
+    const css = readFileSync("src/app/globals.css", "utf8");
+    expect(css).toContain("grid-auto-rows: 112px");
+    expect(css).toContain("grid-auto-rows: 98px");
+    expect(css).toContain(".stat { position: relative; height: 100%; min-height: 0;");
+    const owner = snapshot();
+    owner.plan.travel_notes = longNotes;
+    await renderPlan(owner);
+    const tile = screen.getByRole("button", { name: /Trip notes.*View notes.*Open editor/ });
+    expect(tile.textContent).not.toContain(longNotes);
+    expect(tile.textContent).toContain("View notes");
+    fireEvent.click(tile);
+    const editor = screen.getByRole("dialog", { name: "Trip Notes" });
+    expect((within(editor).getByLabelText("Trip notes") as HTMLTextAreaElement).value).toBe(longNotes);
+    expect(within(editor).getByRole("button", { name: "Save trip notes" })).toBeTruthy();
+
+    cleanup();
+    const member = snapshot("member");
+    member.plan.travel_notes = longNotes;
+    await renderPlan(member);
+    fireEvent.click(screen.getByRole("button", { name: /Trip notes.*View notes.*Open editor/ }));
+    const viewer = screen.getByRole("dialog", { name: "Trip Notes" });
+    expect(viewer.querySelector(".trip-notes-full")?.textContent).toBe(longNotes);
+    expect(within(viewer).queryByRole("button", { name: "Save trip notes" })).toBeNull();
+  });
+
+  it("shows Add notes for an empty compact Trip Notes tile", async () => {
+    await renderPlan();
+    expect(screen.getByRole("button", { name: /Trip notes.*Add notes.*Open editor/ })).toBeTruthy();
+  });
+
   it("keeps native discussion disclosure accessible and resyncs travel-window votes", async () => {
     const next = snapshot();
     next.activity_comments = [{ id: "comment-1", activity_id: "activity-1", author_id: "user-2", author_display_name: "Member", body: "Great idea", version: 1, deleted_at: null, created_at: "2026-01-01", updated_at: "2026-01-01" }];

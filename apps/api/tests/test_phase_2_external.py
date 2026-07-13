@@ -176,7 +176,38 @@ def test_phase2_unavailable_provider_returns_typed_empty_response(
             f"/plans/{plan_id}/place-search?query=unfindable-{uuid4()}", headers=bearer(jwt)
         )
     assert response.status_code == 200
-    assert response.json() == {"status": "unavailable", "results": []}
+    assert response.json() == {
+        "status": "unavailable",
+        "results": [],
+        "error_category": "provider_unavailable",
+    }
+
+
+def test_phase2_malformed_nominatim_response_is_explicit_and_logged(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def malformed_search(*_args, **_kwargs):
+        raise ValueError("malformed_nominatim_response")
+
+    monkeypatch.setattr(
+        "app.services.external_api_service.nominatim.search_places", malformed_search
+    )
+    with client_context() as client:
+        jwt, plan_id = create_plan(client, f"owner-{uuid4()}")
+        response = client.get(
+            f"/plans/{plan_id}/place-search?query=malformed-{uuid4()}", headers=bearer(jwt)
+        )
+    assert response.status_code == 200
+    assert response.json()["error_category"] == "malformed_response"
+    assert response.json()["results"] == []
+    assert "provider=nominatim" in caplog.text
+    assert "category=malformed_response" in caplog.text
+
+
+def test_phase2_nominatim_user_agent_is_identifying_and_contactable() -> None:
+    assert nominatim.NOMINATIM_USER_AGENT.startswith("Basecamp/")
+    assert "contact:" in nominatim.NOMINATIM_USER_AGENT
+    assert "example.invalid" not in nominatim.NOMINATIM_USER_AGENT
 
 
 def test_phase2_nominatim_rate_limiter_serializes_immediate_calls(
@@ -300,6 +331,7 @@ def test_phase2_weather_failure_without_cache_is_neutral(monkeypatch: pytest.Mon
         "temperature_celsius": None,
         "weather_code": None,
         "weather_score": 0.5,
+        "error_category": "provider_unavailable",
     }
 
 
@@ -315,7 +347,11 @@ def test_phase2_overpass_failure_is_typed_unavailable(monkeypatch: pytest.Monkey
             headers=bearer(jwt),
         )
     assert response.status_code == 200
-    assert response.json() == {"status": "unavailable", "results": []}
+    assert response.json() == {
+        "status": "unavailable",
+        "results": [],
+        "error_category": "provider_unavailable",
+    }
 
 
 def test_phase2_each_external_endpoint_requires_membership_and_allows_members(

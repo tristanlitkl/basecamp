@@ -3,9 +3,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ExternalStatusMessage, PlanIntegrations, PlaceSearch, RouteEstimateNotice, WeatherNotice } from "@/components/plans/external-data";
-import { discoverNearbyPlaces, getRouteEstimate, getWeather, searchPlaces } from "@/lib/api-client";
+import { ApiError, MalformedResponseError, discoverNearbyPlaces, getRouteEstimate, getWeather, searchPlaces } from "@/lib/api-client";
 
-vi.mock("@/lib/api-client", () => ({ searchPlaces: vi.fn(), discoverNearbyPlaces: vi.fn(), getRouteEstimate: vi.fn(), getWeather: vi.fn() }));
+vi.mock("@/lib/api-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api-client")>();
+  return { ...actual, searchPlaces: vi.fn(), discoverNearbyPlaces: vi.fn(), getRouteEstimate: vi.fn(), getWeather: vi.fn() };
+});
 
 afterEach(() => {
   cleanup();
@@ -51,6 +54,30 @@ describe("Phase 2 external-data UI", () => {
     expect(input.value).toBe("Manual address");
   });
 
+  it.each([
+    [new ApiError(401, {}), /session expired/i],
+    [new ApiError(403, {}), /do not have permission/i],
+    [new ApiError(422, {}), /search text or selected coordinates/i],
+    [new ApiError(429, {}), /provider is busy/i],
+    [new ApiError(503, {}), /HTTP 503/i],
+    [new TypeError("Failed to fetch"), /Network or CORS failure/i],
+    [new MalformedResponseError(), /Malformed response/i]
+  ])("shows a safe specific request error for %s", async (error, expected) => {
+    vi.mocked(searchPlaces).mockRejectedValue(error);
+    render(<PlaceSearch token="jwt" planId="plan" onSelect={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText(/Find a place/), { target: { value: "lake tahoe" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search places" }));
+    expect(await screen.findByText(expected)).toBeTruthy();
+  });
+
+  it("shows provider fallback categories without exposing provider internals", async () => {
+    vi.mocked(searchPlaces).mockResolvedValue({ status: "unavailable", results: [], error_category: "malformed_response" });
+    render(<PlaceSearch token="jwt" planId="plan" onSelect={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText(/Find a place/), { target: { value: "lake tahoe" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search places" }));
+    expect(await screen.findByText(/provider returned invalid data/i)).toBeTruthy();
+  });
+
   it("uses selected destination and origin for nearby discovery, route, weather, and activity-assist actions", async () => {
     const usePlace = vi.fn();
     vi.mocked(searchPlaces).mockResolvedValue({ status: "cached", results: [{ name: "Cafe", latitude: 1, longitude: 2, address: "1 Main", type: "cafe" }] });
@@ -67,14 +94,18 @@ describe("Phase 2 external-data UI", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Use destination" }));
     expect(usePlace).toHaveBeenCalledWith(expect.objectContaining({ name: "Cafe" }));
     fireEvent.click(screen.getByRole("button", { name: "Find nearby" }));
-    await waitFor(() => expect(discoverNearbyPlaces).toHaveBeenCalledWith("jwt", "plan", expect.objectContaining({ placeType: "cafe" })));
+    await waitFor(() => expect(discoverNearbyPlaces).toHaveBeenCalledWith("jwt", "plan", {
+      south: 0.97, west: 1.97, north: 1.03, east: 2.03, placeType: "cafe"
+    }));
     expect(await screen.findByText("Museum")).toBeTruthy();
     fireEvent.change(screen.getByLabelText(/Search and select origin/), { target: { value: "Origin" } });
     fireEvent.click(screen.getByRole("button", { name: "Search origins" }));
     fireEvent.click(await screen.findByRole("button", { name: "Use origin" }));
     fireEvent.click(screen.getByRole("button", { name: "Estimate route" }));
+    await waitFor(() => expect(getRouteEstimate).toHaveBeenCalledWith("jwt", "plan", { lat: 1, lng: 2 }, { lat: 1, lng: 2 }));
     expect(await screen.findByText(/displayed estimate is approximate/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Check weather" }));
+    await waitFor(() => expect(getWeather).toHaveBeenCalledWith("jwt", "plan", 1, 2));
     expect(await screen.findByText("Using cached weather.")).toBeTruthy();
   });
 });

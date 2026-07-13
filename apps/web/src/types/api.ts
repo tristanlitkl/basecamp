@@ -170,7 +170,8 @@ export type CreateActivityInput = {
 };
 
 export type ExternalStatus = "ok" | "cached" | "stale" | "unavailable";
+export type ExternalErrorCategory = "rate_limit" | "provider_unavailable" | "malformed_response";
 export type PlaceResult = { name: string; latitude: number; longitude: number; address: string | null; type: string | null };
-export type PlaceSearchResponse = { status: ExternalStatus; results: PlaceResult[] };
-export type RouteEstimate = { status: ExternalStatus; distance_meters: number; duration_minutes: number; approximate: boolean };
-export type WeatherResponse = { status: ExternalStatus; temperature_celsius: number | null; weather_code: number | null; weather_score: number };
+export type PlaceSearchResponse = { status: ExternalStatus; results: PlaceResult[]; error_category?: ExternalErrorCategory | null };
+export type RouteEstimate = { status: ExternalStatus; distance_meters: number; duration_minutes: number; approximate: boolean; error_category?: ExternalErrorCategory | null };
+export type WeatherResponse = { status: ExternalStatus; temperature_celsius: number | null; weather_code: number | null; weather_score: number; error_category?: ExternalErrorCategory | null };

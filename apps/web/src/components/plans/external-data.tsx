@@ -2,10 +2,11 @@
 
 import React, { useState } from "react";
 
-import { ApiError, discoverNearbyPlaces, getRouteEstimate, getWeather, searchPlaces } from "@/lib/api-client";
-import type { ExternalStatus, PlaceResult, RouteEstimate, WeatherResponse } from "@/types/api";
+import { ApiError, MalformedResponseError, discoverNearbyPlaces, getRouteEstimate, getWeather, searchPlaces } from "@/lib/api-client";
+import type { ExternalErrorCategory, ExternalStatus, PlaceResult, PlaceSearchResponse, RouteEstimate, WeatherResponse } from "@/types/api";
 
 function requestErrorMessage(error: unknown) {
+  if (error instanceof MalformedResponseError) return "Malformed response — the server returned invalid external data. Your current entries were kept.";
   if (!(error instanceof ApiError)) return "Network or CORS failure — check your connection and try again. Your current entries were kept.";
   const messages: Record<number, string> = {
     401: "Your session expired. Sign in again, then retry this request.",
@@ -18,11 +19,18 @@ function requestErrorMessage(error: unknown) {
   return messages[error.status] ?? `Request failed (HTTP ${error.status}). Your current entries were kept.`;
 }
 
+function providerErrorMessage(category: ExternalErrorCategory) {
+  if (category === "rate_limit") return "Rate limit — the provider is busy. Wait a moment and try again.";
+  if (category === "malformed_response") return "Malformed response — the provider returned invalid data. Your current entries were kept.";
+  return "Provider unavailable — try again later. Your current entries were kept.";
+}
+
 function ExternalRequestError({ error }: { error: unknown | null }) {
   return error ? <p className="alert small" role="alert">{requestErrorMessage(error)}</p> : null;
 }
 
-export function ExternalStatusMessage({ kind, status }: { kind: "place" | "route" | "weather"; status: ExternalStatus }) {
+export function ExternalStatusMessage({ kind, status, errorCategory }: { kind: "place" | "route" | "weather"; status: ExternalStatus; errorCategory?: ExternalErrorCategory | null }) {
+  if (status === "unavailable" && errorCategory) return <p className="muted small" role="status">{providerErrorMessage(errorCategory)}</p>;
   if (kind === "place") {
     if (status === "ok") return <p className="muted small" role="status">Live place results ready.</p>;
     if (status === "unavailable") return <p className="muted small" role="status">Place search unavailable — you can still add a place manually.</p>;
@@ -43,7 +51,7 @@ export function ExternalStatusMessage({ kind, status }: { kind: "place" | "route
 
 export function PlaceSearch({ token, planId, disabled, onSelect, label = "Find a place", actionLabel = "Search places", useLabel = "Use place" }: { token: string; planId: string; disabled?: boolean; onSelect: (place: PlaceResult) => void; label?: string; actionLabel?: string; useLabel?: string }) {
   const [query, setQuery] = useState("");
-  const [result, setResult] = useState<{ status: ExternalStatus; results: PlaceResult[] } | null>(null);
+  const [result, setResult] = useState<PlaceSearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown | null>(null);
 
@@ -59,7 +67,7 @@ export function PlaceSearch({ token, planId, disabled, onSelect, label = "Find a
   return <div className="subcard stack" aria-label="Place search">
     <label className="field">{label} <span className="optional">Optional</span><input value={query} disabled={disabled || loading} onChange={(event) => setQuery(event.target.value)} /></label>
     <div className="cluster"><button className="btn btn-secondary" type="button" disabled={disabled || loading || !query.trim()} onClick={() => void submit()}>{loading ? "Searching…" : actionLabel}</button><span className="muted small">Search runs only when you choose Search.</span></div>
-    {result && <ExternalStatusMessage kind="place" status={result.status} />}
+    {result && <ExternalStatusMessage kind="place" status={result.status} errorCategory={result.error_category} />}
     <ExternalRequestError error={error} />
     <PlaceResults results={result?.results ?? []} onSelect={onSelect} useLabel={useLabel} />
   </div>;
@@ -81,7 +89,7 @@ export function PlanIntegrations({
   const [origin, setOrigin] = useState<PlaceResult | null>(null);
   const [destination, setDestination] = useState<PlaceResult | null>(null);
   const [placeType, setPlaceType] = useState("cafe");
-  const [nearby, setNearby] = useState<{ status: ExternalStatus; results: PlaceResult[] } | null>(null);
+  const [nearby, setNearby] = useState<PlaceSearchResponse | null>(null);
   const [route, setRoute] = useState<RouteEstimate | null>(null);
   const [weather, setWeather] = useState<WeatherResponse | null>(null);
   const [nearbyLoading, setNearbyLoading] = useState(false);
@@ -148,7 +156,7 @@ export function PlanIntegrations({
     <div className="section-heading"><div><h2 id="explore-places-heading">Explore places</h2><p className="muted small">Search and nearby discovery are optional helpers. You can always add an activity manually.</p></div></div>
     <div className="external-integration-grid">
       <div className="subcard stack"><h3>Destination</h3><PlaceSearch token={token} planId={planId} disabled={disabled} label="Search and select destination" actionLabel="Search destinations" useLabel="Use destination" onSelect={useDestination} />{destination && <p className="muted small">Selected destination: {destination.name}</p>}</div>
-      <div className="subcard stack"><h3>Nearby places</h3><p className="muted small">{destination ? `Find places near ${destination.name}.` : "Select a destination or center point first."}</p><label className="field">Place type <input aria-label="Nearby place type" value={placeType} disabled={disabled || nearbyLoading} onChange={(event) => setPlaceType(event.target.value)} /></label><button className="btn btn-secondary" type="button" aria-describedby={!destination ? "nearby-prerequisite" : undefined} disabled={disabled || nearbyLoading || !destination || !placeType.trim()} onClick={() => void findNearby()}>{nearbyLoading ? "Finding nearby places…" : "Find nearby"}</button>{!destination && <p className="muted small" id="nearby-prerequisite">A selected destination or center point is required.</p>}{nearby && <ExternalStatusMessage kind="place" status={nearby.status} />}<ExternalRequestError error={nearbyError} /><PlaceResults results={nearby?.results ?? []} onSelect={useDestination} useLabel="Use nearby place" /></div>
+      <div className="subcard stack"><h3>Nearby places</h3><p className="muted small">{destination ? `Find places near ${destination.name}.` : "Select a destination or center point first."}</p><label className="field">Place type <input aria-label="Nearby place type" value={placeType} disabled={disabled || nearbyLoading} onChange={(event) => setPlaceType(event.target.value)} /></label><button className="btn btn-secondary" type="button" aria-describedby={!destination ? "nearby-prerequisite" : undefined} disabled={disabled || nearbyLoading || !destination || !placeType.trim()} onClick={() => void findNearby()}>{nearbyLoading ? "Finding nearby places…" : "Find nearby"}</button>{!destination && <p className="muted small" id="nearby-prerequisite">A selected destination or center point is required.</p>}{nearby && <ExternalStatusMessage kind="place" status={nearby.status} errorCategory={nearby.error_category} />}<ExternalRequestError error={nearbyError} /><PlaceResults results={nearby?.results ?? []} onSelect={useDestination} useLabel="Use nearby place" /></div>
       <div className="subcard stack"><h3>Route estimate</h3><PlaceSearch token={token} planId={planId} disabled={disabled} label="Search and select origin" actionLabel="Search origins" useLabel="Use origin" onSelect={(place) => { setOrigin(place); setRoute(null); }} />{origin && <p className="muted small">From: {origin.name}</p>}{destination && <p className="muted small">To: {destination.name}</p>}<button className="btn btn-secondary" type="button" aria-describedby={(!origin || !destination) ? "route-prerequisite" : undefined} disabled={disabled || routeLoading || !origin || !destination} onClick={() => void estimateRoute()}>{routeLoading ? "Estimating route…" : "Estimate route"}</button>{(!origin || !destination) && <p className="muted small" id="route-prerequisite">Select both an origin and destination with coordinates to estimate a route.</p>}<ExternalRequestError error={routeError} /><RouteEstimateNotice estimate={route} /></div>
       <div className="subcard stack"><h3>Weather</h3><p className="muted small">{destination ? `Forecast for ${destination.name}.` : "Select a destination to check weather."}</p><button className="btn btn-secondary" type="button" disabled={disabled || weatherLoading || !destination} onClick={() => void lookupWeather()}>{weatherLoading ? "Checking weather…" : "Check weather"}</button><ExternalRequestError error={weatherError} /><WeatherNotice weather={weather} /></div>
     </div>
@@ -158,10 +166,10 @@ export function PlanIntegrations({
 
 export function RouteEstimateNotice({ estimate }: { estimate: RouteEstimate | null }) {
   if (!estimate) return null;
-  return <div><ExternalStatusMessage kind="route" status={estimate.status} /><p className="muted small">{(estimate.distance_meters / 1609.344).toFixed(1)} mi · {estimate.duration_minutes} min{estimate.approximate ? " (approximate)" : ""}</p></div>;
+  return <div><ExternalStatusMessage kind="route" status={estimate.status} errorCategory={estimate.error_category} /><p className="muted small">{(estimate.distance_meters / 1609.344).toFixed(1)} mi · {estimate.duration_minutes} min{estimate.approximate ? " (approximate)" : ""}</p></div>;
 }
 
 export function WeatherNotice({ weather }: { weather: WeatherResponse | null }) {
   if (!weather) return null;
-  return <div><ExternalStatusMessage kind="weather" status={weather.status} />{weather.temperature_celsius !== null && <p className="muted small">Weather: {weather.temperature_celsius.toFixed(1)}°C{weather.weather_code !== null ? ` · conditions code ${weather.weather_code}` : ""}</p>}<p className="muted small">Forecast time: current requested hour.</p></div>;
+  return <div><ExternalStatusMessage kind="weather" status={weather.status} errorCategory={weather.error_category} />{weather.temperature_celsius !== null && <p className="muted small">Weather: {weather.temperature_celsius.toFixed(1)}°C{weather.weather_code !== null ? ` · conditions code ${weather.weather_code}` : ""}</p>}<p className="muted small">Forecast time: current requested hour.</p></div>;
 }

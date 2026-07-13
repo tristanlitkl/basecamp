@@ -33,6 +33,46 @@ export class ApiError extends Error {
   }
 }
 
+export class MalformedResponseError extends Error {
+  constructor() {
+    super("The server returned a malformed response.");
+    this.name = "MalformedResponseError";
+  }
+}
+
+const externalStatuses = new Set(["ok", "cached", "stale", "unavailable"]);
+const externalErrorCategories = new Set(["rate_limit", "provider_unavailable", "malformed_response"]);
+
+function externalBase(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.status === "string" && externalStatuses.has(item.status) &&
+    (item.error_category == null || (typeof item.error_category === "string" && externalErrorCategories.has(item.error_category)));
+}
+
+function parsePlaceSearch(value: unknown): PlaceSearchResponse {
+  if (!externalBase(value) || !Array.isArray(value.results) || !value.results.every((place) => {
+    if (!place || typeof place !== "object") return false;
+    const item = place as Record<string, unknown>;
+    return typeof item.name === "string" && typeof item.latitude === "number" && Number.isFinite(item.latitude) &&
+      typeof item.longitude === "number" && Number.isFinite(item.longitude) &&
+      (item.address === null || typeof item.address === "string") && (item.type === null || typeof item.type === "string");
+  })) throw new MalformedResponseError();
+  return value as PlaceSearchResponse;
+}
+
+function parseRoute(value: unknown): RouteEstimate {
+  if (!externalBase(value) || typeof value.distance_meters !== "number" || !Number.isFinite(value.distance_meters) ||
+    typeof value.duration_minutes !== "number" || !Number.isFinite(value.duration_minutes) || typeof value.approximate !== "boolean") throw new MalformedResponseError();
+  return value as RouteEstimate;
+}
+
+function parseWeather(value: unknown): WeatherResponse {
+  if (!externalBase(value) || (value.temperature_celsius !== null && typeof value.temperature_celsius !== "number") ||
+    (value.weather_code !== null && typeof value.weather_code !== "number") || typeof value.weather_score !== "number" || !Number.isFinite(value.weather_score)) throw new MalformedResponseError();
+  return value as WeatherResponse;
+}
+
 export function isAuthenticationError(error: unknown): boolean {
   return error instanceof ApiError && error.status === 401;
 }
@@ -117,8 +157,8 @@ export function resyncPlan(token: string, planId: string): Promise<ResyncSnapsho
   return apiFetch<ResyncSnapshot>(token, `/plans/${planId}/resync`);
 }
 
-export function searchPlaces(token: string, planId: string, query: string): Promise<PlaceSearchResponse> {
-  return apiFetch(token, `/plans/${planId}/place-search?query=${encodeURIComponent(query)}`);
+export async function searchPlaces(token: string, planId: string, query: string): Promise<PlaceSearchResponse> {
+  return parsePlaceSearch(await apiFetch<unknown>(token, `/plans/${planId}/place-search?query=${encodeURIComponent(query)}`));
 }
 
 export function discoverNearbyPlaces(
@@ -133,17 +173,17 @@ export function discoverNearbyPlaces(
     east: String(input.east),
     place_type: input.placeType
   });
-  return apiFetch(token, `/plans/${planId}/nearby-places?${query}`);
+  return apiFetch<unknown>(token, `/plans/${planId}/nearby-places?${query}`).then(parsePlaceSearch);
 }
 
-export function getRouteEstimate(token: string, planId: string, origin: { lat: number; lng: number }, destination: { lat: number; lng: number }): Promise<RouteEstimate> {
+export async function getRouteEstimate(token: string, planId: string, origin: { lat: number; lng: number }, destination: { lat: number; lng: number }): Promise<RouteEstimate> {
   const query = new URLSearchParams({ origin_lat: String(origin.lat), origin_lng: String(origin.lng), destination_lat: String(destination.lat), destination_lng: String(destination.lng) });
-  return apiFetch(token, `/plans/${planId}/route-estimate?${query}`);
+  return parseRoute(await apiFetch<unknown>(token, `/plans/${planId}/route-estimate?${query}`));
 }
 
-export function getWeather(token: string, planId: string, latitude: number, longitude: number): Promise<WeatherResponse> {
+export async function getWeather(token: string, planId: string, latitude: number, longitude: number): Promise<WeatherResponse> {
   const query = new URLSearchParams({ latitude: String(latitude), longitude: String(longitude) });
-  return apiFetch(token, `/plans/${planId}/weather?${query}`);
+  return parseWeather(await apiFetch<unknown>(token, `/plans/${planId}/weather?${query}`));
 }
 
 export function getPlanBalances(token: string, planId: string): Promise<PlanBalance[]> {

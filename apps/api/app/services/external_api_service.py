@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import asyncio
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Literal
 
+import httpx
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -27,6 +29,9 @@ CLEANUP_EVERY_REQUESTS = 20
 _nominatim_inflight_lock = asyncio.Lock()
 _nominatim_inflight: dict[str, asyncio.Future["PlaceSearchResponse"]] = {}
 _cleanup_request_count = 0
+logger = logging.getLogger(__name__)
+
+ExternalErrorCategory = Literal["rate_limit", "provider_unavailable", "malformed_response"]
 
 
 class PlaceResult(BaseModel):
@@ -40,6 +45,7 @@ class PlaceResult(BaseModel):
 class PlaceSearchResponse(BaseModel):
     status: Literal["ok", "cached", "stale", "unavailable"]
     results: list[PlaceResult] = Field(default_factory=list)
+    error_category: ExternalErrorCategory | None = None
 
 
 class RouteEstimate(BaseModel):
@@ -47,6 +53,7 @@ class RouteEstimate(BaseModel):
     distance_meters: float
     duration_minutes: int
     approximate: bool = False
+    error_category: ExternalErrorCategory | None = None
 
 
 class WeatherResponse(BaseModel):
@@ -54,6 +61,26 @@ class WeatherResponse(BaseModel):
     temperature_celsius: float | None = None
     weather_code: int | None = None
     weather_score: float
+    error_category: ExternalErrorCategory | None = None
+
+
+def _provider_error_category(error: Exception) -> ExternalErrorCategory:
+    if isinstance(error, httpx.HTTPStatusError) and error.response.status_code == 429:
+        return "rate_limit"
+    if isinstance(error, (ValueError, TypeError, KeyError)):
+        return "malformed_response"
+    return "provider_unavailable"
+
+
+def _log_provider_failure(provider: str, error: Exception, **context: object) -> None:
+    status_code = error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None
+    logger.warning(
+        "external_provider_failure provider=%s category=%s status_code=%s context=%s",
+        provider,
+        _provider_error_category(error),
+        status_code,
+        context,
+    )
 
 
 def normalize_query(query: str) -> str:
@@ -201,11 +228,14 @@ async def search_places(session: AsyncSession, query: str) -> PlaceSearchRespons
         response = PlaceSearchResponse(
             status="ok", results=[PlaceResult(**item) for item in results]
         )
-    except Exception:  # provider failures are expected; never expose their internals to users
+    except Exception as error:  # provider failures are expected; never expose internals
+        _log_provider_failure("nominatim", error, query_length=len(normalized))
         response = (
             _place_response(record, "stale")
             if record
-            else PlaceSearchResponse(status="unavailable")
+            else PlaceSearchResponse(
+                status="unavailable", error_category=_provider_error_category(error)
+            )
         )
     except BaseException as error:
         if not future.done():
@@ -232,14 +262,19 @@ async def discover_nearby_places(
         results = await overpass.discover_nearby(bbox, normalize_query(place_type))
         await _store_place(session, key, "nearby", "overpass", results)
         return PlaceSearchResponse(status="ok", results=[PlaceResult(**item) for item in results])
-    except Exception:
+    except Exception as error:
+        _log_provider_failure("overpass", error, place_type=normalize_query(place_type))
         if record:
             return _place_response(record, "stale")
-        return PlaceSearchResponse(status="unavailable")
+        return PlaceSearchResponse(
+            status="unavailable", error_category=_provider_error_category(error)
+        )
 
 
 def straight_line_route(
-    origin: tuple[float, float], destination: tuple[float, float]
+    origin: tuple[float, float],
+    destination: tuple[float, float],
+    error_category: ExternalErrorCategory = "provider_unavailable",
 ) -> RouteEstimate:
     lat1, lng1, lat2, lng2 = map(math.radians, (*origin, *destination))
     haversine = (
@@ -253,6 +288,7 @@ def straight_line_route(
         distance_meters=round(meters, 2),
         duration_minutes=max(1, round(miles * 2.5)),
         approximate=True,
+        error_category=error_category,
     )
 
 
@@ -305,10 +341,11 @@ async def get_route_estimate(
         await session.execute(statement)
         await session.commit()
         return RouteEstimate(status="ok", **live)
-    except Exception:
+    except Exception as error:
+        _log_provider_failure("osrm", error)
         if record:
             return _route_response(record, "stale")
-        return straight_line_route(origin, destination)
+        return straight_line_route(origin, destination, _provider_error_category(error))
 
 
 async def _weather_cache(session: AsyncSession, key: str) -> WeatherSnapshot | None:
@@ -378,7 +415,12 @@ async def get_weather(
             weather_code=live["weather_code"],
             weather_score=score,
         )
-    except Exception:
+    except Exception as error:
+        _log_provider_failure("open-meteo", error, forecast_hour=canonical)
         if record:
             return _weather_response(record, "stale")
-        return WeatherResponse(status="unavailable", weather_score=0.5)
+        return WeatherResponse(
+            status="unavailable",
+            weather_score=0.5,
+            error_category=_provider_error_category(error),
+        )

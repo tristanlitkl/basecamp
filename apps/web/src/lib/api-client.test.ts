@@ -12,6 +12,7 @@ import {
   getRouteEstimate,
   getWeather,
   getMe,
+  MalformedResponseError,
   patchActivity,
   patchExpense,
   patchItineraryItem,
@@ -104,7 +105,11 @@ describe("API app JWT refresh", () => {
   });
 
   it("matches every Phase 2 FastAPI query contract exactly", async () => {
-    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ status: "ok", results: [] }), { status: 200 })));
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok", results: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok", results: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok", distance_meters: 1, duration_minutes: 1, approximate: false }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok", temperature_celsius: 20, weather_code: 1, weather_score: 0.8 }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     await searchPlaces("token", "plan-1", "Golden Gate Park");
     await discoverNearbyPlaces("token", "plan-1", { south: 37.7, west: -122.5, north: 37.8, east: -122.4, placeType: "cafe" });
@@ -114,6 +119,13 @@ describe("API app JWT refresh", () => {
     expect(fetchMock.mock.calls[1][0]).toContain("south=37.7&west=-122.5&north=37.8&east=-122.4&place_type=cafe");
     expect(fetchMock.mock.calls[2][0]).toContain("origin_lat=37.7&origin_lng=-122.5&destination_lat=37.8&destination_lng=-122.4");
     expect(fetchMock.mock.calls[3][0]).toContain("/plans/plan-1/weather?latitude=37.7&longitude=-122.5");
+  });
+
+  it("rejects malformed external responses instead of treating them as empty success", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ status: "ok", results: [{ name: "Broken" }] }), { status: 200 })
+    ));
+    await expect(searchPlaces("token", "plan-1", "lake tahoe")).rejects.toBeInstanceOf(MalformedResponseError);
   });
 
   it("sends itinerary create, edit, reorder, and delete contracts exactly", async () => {
