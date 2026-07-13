@@ -6,6 +6,7 @@ RUN python -m pip install --no-cache-dir \
     "alembic>=1.13" \
     "asyncpg>=0.30" \
     "fastapi>=0.115" \
+    "httpx>=0.28" \
     "pydantic-settings>=2.6" \
     "pyjwt>=2.9" \
     "sqlalchemy>=2.0" \
