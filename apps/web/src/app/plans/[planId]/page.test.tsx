@@ -28,6 +28,7 @@ import {
   reorderItineraryItem,
   removeMember,
   resyncPlan,
+  searchPlaces,
   setPlanLifecycle,
   syncUser, withdrawCoOwnerRequest,
   upsertDateAvailability, voteActivity, voteDateSuggestion
@@ -50,7 +51,7 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
     createItineraryItem: vi.fn(), patchItineraryItem: vi.fn(), reorderItineraryItem: vi.fn(), deleteItineraryItem: vi.fn(),
     createExpense: vi.fn(), patchExpense: vi.fn(), deleteExpense: vi.fn(),
     patchPlan: vi.fn(), setPlanLifecycle: vi.fn(), createInvite: vi.fn(),
-    changeMemberRole: vi.fn(), removeMember: vi.fn(), createCoOwnerRequest: vi.fn(), withdrawCoOwnerRequest: vi.fn(), decideCoOwnerRequest: vi.fn(), createComment: vi.fn(), createActivitySuggestion: vi.fn(), decideActivitySuggestion: vi.fn(), upsertDateAvailability: vi.fn(), createDateSuggestion: vi.fn(), decideDateSuggestion: vi.fn(), voteDateSuggestion: vi.fn(), createPlanSuggestion: vi.fn(), decidePlanSuggestion: vi.fn()
+    changeMemberRole: vi.fn(), removeMember: vi.fn(), createCoOwnerRequest: vi.fn(), withdrawCoOwnerRequest: vi.fn(), decideCoOwnerRequest: vi.fn(), createComment: vi.fn(), createActivitySuggestion: vi.fn(), decideActivitySuggestion: vi.fn(), upsertDateAvailability: vi.fn(), createDateSuggestion: vi.fn(), decideDateSuggestion: vi.fn(), voteDateSuggestion: vi.fn(), createPlanSuggestion: vi.fn(), decidePlanSuggestion: vi.fn(), searchPlaces: vi.fn()
   };
 });
 
@@ -634,5 +635,22 @@ describe("Phase 1B.5 planning UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "Deny" }));
     await waitFor(() => expect(decideCoOwnerRequest).toHaveBeenCalledWith("app-jwt", "plan-1", "request-1", "deny", 1, "operation-id"));
     expect(screen.queryByText("Member directory")).toBeNull();
+  });
+
+  it("keeps a manually entered activity address when place search is unavailable", async () => {
+    let resolve!: (value: { status: "unavailable"; results: [] }) => void;
+    vi.mocked(searchPlaces).mockReturnValue(new Promise((done) => { resolve = done; }));
+    await renderPlan();
+    fireEvent.click(screen.getByRole("button", { name: "+ Add activity" }));
+    const address = screen.getByLabelText(/^Address/) as HTMLInputElement;
+    fireEvent.change(address, { target: { value: "Manual cabin address" } });
+    fireEvent.change(screen.getByLabelText(/Find a place/), { target: { value: "Cabin" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search places" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Searching…" })).toBeTruthy());
+    expect(address.disabled).toBe(false);
+    expect(address.value).toBe("Manual cabin address");
+    resolve({ status: "unavailable", results: [] });
+    await screen.findByText(/Place search unavailable/);
+    expect(address.value).toBe("Manual cabin address");
   });
 });

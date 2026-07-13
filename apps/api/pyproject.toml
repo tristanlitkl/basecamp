@@ -8,6 +8,7 @@ dependencies = [
   "asyncpg>=0.30",
   "fastapi>=0.115",
   "greenlet>=3.5.3",
+  "httpx>=0.28",
   "pydantic-settings>=2.6",
   "pyjwt>=2.9",
   "sqlalchemy>=2.0",

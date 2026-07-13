@@ -28,6 +28,8 @@ import {
   decideDateSuggestion,
   decidePlanSuggestion,
   getPlanBalances,
+  getRouteEstimate,
+  getWeather,
   isAuthenticationError,
   isPlanMembershipError,
   patchActivity,
@@ -45,6 +47,7 @@ import {
   voteDateSuggestion,
   withdrawCoOwnerRequest
 } from "@/lib/api-client";
+import { PlaceSearch, RouteEstimateNotice, WeatherNotice } from "@/components/plans/external-data";
 import { formatCents, parseDollarCents } from "@/lib/money";
 import { connectionLabel } from "@/hooks/useConnectionStatus";
 import { usePlanSocket } from "@/hooks/usePlanSocket";
@@ -53,7 +56,7 @@ import { AvailabilityCalendar } from "@/components/plans/availability-calendar";
 import { AdventureBackground } from "@/components/plans/adventure-background";
 import { avatarEmoji } from "@/lib/avatar";
 import { sortMembers } from "@/lib/member-directory";
-import type { ActivitySummary, Expense, PlanBalance, PlanDetail, ResyncSnapshot } from "@/types/api";
+import type { ActivitySummary, Expense, PlanBalance, PlanDetail, PlaceResult, ResyncSnapshot, RouteEstimate, WeatherResponse } from "@/types/api";
 
 type TravelMode = "car" | "plane" | "train" | "bus";
 
@@ -232,6 +235,9 @@ export default function PlanPage() {
   const [activityName, setActivityName] = useState("");
   const [activityDescription, setActivityDescription] = useState("");
   const [activityAddress, setActivityAddress] = useState("");
+  const [selectedPlace, setSelectedPlace] = useState<PlaceResult | null>(null);
+  const [routeEstimate, setRouteEstimate] = useState<RouteEstimate | null>(null);
+  const [weather, setWeather] = useState<WeatherResponse | null>(null);
   const [activityCost, setActivityCost] = useState("");
   const [activityHours, setActivityHours] = useState("");
   const [activityMinutes, setActivityMinutes] = useState("");
@@ -440,12 +446,15 @@ export default function PlanPage() {
         event.preventDefault(); const cents = activityCost ? parseDollarCents(activityCost) : undefined;
         const duration = parseDuration(activityHours, activityMinutes);
         if (!activityName.trim() || cents === null || duration === null) { setError("Enter an activity name, a valid cost, and a positive duration with minutes from 0 to 59."); return; }
-        void mutate(() => createActivity(session.appJwt!, planId, { name: activityName.trim(), description: activityDescription || undefined, address: activityAddress || undefined, estimated_cost_cents: cents, estimated_duration_minutes: duration, tags: activityTags.split(",").map((tag) => tag.trim()).filter(Boolean), notes: activityNotes || undefined, client_operation_id: crypto.randomUUID() })); setShowActivityForm(false);
-        setActivityName(""); setActivityDescription(""); setActivityAddress(""); setActivityCost(""); setActivityHours(""); setActivityMinutes(""); setActivityTags(""); setActivityNotes("");
+        void mutate(() => createActivity(session.appJwt!, planId, { name: activityName.trim(), description: activityDescription || undefined, address: activityAddress || undefined, lat: selectedPlace ? String(selectedPlace.latitude) : undefined, lng: selectedPlace ? String(selectedPlace.longitude) : undefined, estimated_cost_cents: cents, estimated_duration_minutes: duration, tags: activityTags.split(",").map((tag) => tag.trim()).filter(Boolean), notes: activityNotes || undefined, client_operation_id: crypto.randomUUID() })); setShowActivityForm(false);
+        setActivityName(""); setActivityDescription(""); setActivityAddress(""); setSelectedPlace(null); setRouteEstimate(null); setWeather(null); setActivityCost(""); setActivityHours(""); setActivityMinutes(""); setActivityTags(""); setActivityNotes("");
       }}>
         <label className="field">Name <input value={activityName} onChange={(event) => setActivityName(event.target.value)} disabled={disabled} /></label>
         <label className="field">Description <span className="optional">Optional</span><input value={activityDescription} onChange={(event) => setActivityDescription(event.target.value)} disabled={disabled} /></label>
         <label className="field">Address <span className="optional">Optional</span><input value={activityAddress} onChange={(event) => setActivityAddress(event.target.value)} disabled={disabled} /></label>
+        <div className="form-span"><PlaceSearch token={session.appJwt!} planId={planId} disabled={disabled} onSelect={(place) => { setSelectedPlace(place); setActivityAddress(place.address || place.name); setRouteEstimate(null); setWeather(null); }} />
+          {selectedPlace && <div className="cluster"><span className="muted small">Selected: {selectedPlace.name}</span><button className="btn btn-secondary" type="button" disabled={disabled} onClick={() => void getWeather(session.appJwt!, planId, selectedPlace.latitude, selectedPlace.longitude).then(setWeather).catch(() => setWeather({ status: "unavailable", temperature_celsius: null, weather_code: null, weather_score: 0.5 }))}>Check weather</button>{plan.activities.find((activity) => activity.lat !== null && activity.lng !== null) && <button className="btn btn-secondary" type="button" disabled={disabled} onClick={() => { const origin = plan.activities.find((activity) => activity.lat !== null && activity.lng !== null)!; void getRouteEstimate(session.appJwt!, planId, { lat: Number(origin.lat), lng: Number(origin.lng) }, { lat: selectedPlace.latitude, lng: selectedPlace.longitude }).then(setRouteEstimate).catch(() => setRouteEstimate({ status: "unavailable", distance_meters: 0, duration_minutes: 0, approximate: true })); }}>Estimate route</button>}</div>}
+          <WeatherNotice weather={weather} /><RouteEstimateNotice estimate={routeEstimate} /></div>
         <label className="field">Estimated cost <span className="optional">Optional</span><input value={activityCost} inputMode="decimal" onChange={(event) => setActivityCost(event.target.value)} disabled={disabled} /></label>
         <fieldset className="duration-input"><legend>Duration <span className="optional">Optional</span></legend><label className="field">Hours <input aria-label="Hours" value={activityHours} min="0" inputMode="numeric" onChange={(event) => setActivityHours(event.target.value)} disabled={disabled} /></label><label className="field">Minutes <input aria-label="Minutes" value={activityMinutes} min="0" max="59" inputMode="numeric" onChange={(event) => setActivityMinutes(event.target.value)} disabled={disabled} /></label></fieldset>
         <label className="field">Tags (comma-separated) <span className="optional">Optional</span><input value={activityTags} onChange={(event) => setActivityTags(event.target.value)} disabled={disabled} /></label>

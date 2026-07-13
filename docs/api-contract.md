@@ -55,6 +55,29 @@ use `GET /plans/{plan_id}/resync` to replace local state; the WebSocket packet
 is never authoritative data. Rapid reorder notices for the same itinerary item
 may be coalesced for 200 ms after their commits.
 
+## Phase 2 External data
+
+All Phase 2 endpoints require an app JWT and server-side plan membership. They are
+cache-backed reads, never mutate the plan or its version counters, and return a
+typed `status`: `ok`, `cached`, `stale`, or `unavailable`.
+
+Place and route responses expire after seven days; weather responses expire after
+24 hours. Expired records remain eligible only for explicit `stale` fallbacks for
+30 days, then a bounded opportunistic cleanup runs once per 20 external-data
+accesses. Cleanup failure is intentionally isolated from the response path.
+
+- `GET /plans/{plan_id}/place-search?query=...` returns `{status, results}`.
+  `unavailable` has an empty result list; manual activity entry remains valid.
+- `GET /plans/{plan_id}/nearby-places?south=&west=&north=&east=&place_type=`
+  returns `{status, results}` with the same unavailable contract.
+- `GET /plans/{plan_id}/route-estimate?origin_lat=&origin_lng=&destination_lat=&destination_lng=`
+  returns `{status, distance_meters, duration_minutes, approximate}`. An
+  unavailable response is a deterministic straight-line estimate and has
+  `approximate: true`.
+- `GET /plans/{plan_id}/weather?latitude=&longitude=&forecast_hour=` returns
+  `{status, temperature_celsius, weather_code, weather_score}`. An unavailable
+  response uses the neutral `weather_score` of `0.5`.
+
 ## Phase 1B Balances
 
 `GET /plans/{plan_id}/balances`

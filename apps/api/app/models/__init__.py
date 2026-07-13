@@ -1,6 +1,7 @@
 """Basecamp SQLAlchemy models."""
 
 from app.models.activity import Activity
+from app.models.cache import PlaceCache, RouteCache, WeatherSnapshot
 from app.models.coordination import ActivityComment, ActivitySuggestion, CoOwnerRequest
 from app.models.expense import Expense, ExpenseSplit
 from app.models.invite import PlanInvite
@@ -21,6 +22,9 @@ from app.models.vote import ActivityVote
 
 __all__ = [
     "Activity",
+    "PlaceCache",
+    "RouteCache",
+    "WeatherSnapshot",
     "ActivityComment",
     "ActivitySuggestion",
     "CoOwnerRequest",

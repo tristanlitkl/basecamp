@@ -12,6 +12,9 @@ import type {
   PlanBalance,
   PlanSummary,
   ResyncSnapshot,
+  PlaceSearchResponse,
+  RouteEstimate,
+  WeatherResponse,
   User
 } from "@/types/api";
 
@@ -112,6 +115,20 @@ export function getPlan(token: string, planId: string): Promise<PlanDetail> {
 
 export function resyncPlan(token: string, planId: string): Promise<ResyncSnapshot> {
   return apiFetch<ResyncSnapshot>(token, `/plans/${planId}/resync`);
+}
+
+export function searchPlaces(token: string, planId: string, query: string): Promise<PlaceSearchResponse> {
+  return apiFetch(token, `/plans/${planId}/place-search?query=${encodeURIComponent(query)}`);
+}
+
+export function getRouteEstimate(token: string, planId: string, origin: { lat: number; lng: number }, destination: { lat: number; lng: number }): Promise<RouteEstimate> {
+  const query = new URLSearchParams({ origin_lat: String(origin.lat), origin_lng: String(origin.lng), destination_lat: String(destination.lat), destination_lng: String(destination.lng) });
+  return apiFetch(token, `/plans/${planId}/route-estimate?${query}`);
+}
+
+export function getWeather(token: string, planId: string, latitude: number, longitude: number): Promise<WeatherResponse> {
+  const query = new URLSearchParams({ latitude: String(latitude), longitude: String(longitude) });
+  return apiFetch(token, `/plans/${planId}/weather?${query}`);
 }
 
 export function getPlanBalances(token: string, planId: string): Promise<PlanBalance[]> {
