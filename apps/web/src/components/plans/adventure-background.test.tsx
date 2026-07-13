@@ -39,4 +39,21 @@ describe("AdventureBackground", () => {
     expect(removeEventListener).toHaveBeenCalledWith("scroll", scrollRegistration?.[1]);
     expect(cancelAnimationFrame).toHaveBeenCalledWith(19);
   });
+
+  it("writes normalized progress and restrained transform variables instead of React state", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false })));
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(1);
+      return 1;
+    });
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 120 });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
+    Object.defineProperty(document.documentElement, "scrollHeight", { configurable: true, value: 2000 });
+    const { unmount } = render(<AdventureBackground />);
+    expect(document.documentElement.style.getPropertyValue("--scroll-progress")).toBe("0.100");
+    expect(document.documentElement.style.getPropertyValue("--bg-scale")).toBe("0.982");
+    expect(document.documentElement.style.getPropertyValue("--bg-rotation")).toBe("-3.20deg");
+    unmount();
+    expect(document.documentElement.style.getPropertyValue("--scroll-progress")).toBe("");
+  });
 });

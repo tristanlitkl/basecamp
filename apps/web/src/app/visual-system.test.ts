@@ -5,7 +5,7 @@ const styles = readFileSync("src/app/globals.css", "utf8");
 
 describe("Basecamp visual system", () => {
   it("centralizes the command-strip, surface, motion, and focus tokens", () => {
-    for (const token of ["--surface-canvas", "--surface-raised", "--cobalt", "--cyan", "--violet", "--shadow-card", "--transition-fast", "--transition-panel"]) {
+    for (const token of ["--surface-canvas", "--surface-raised", "--cobalt", "--cyan", "--violet", "--shadow-card", "--transition-fast", "--transition-panel", "--scroll-progress", "--aurora-opacity"]) {
       expect(styles).toContain(token);
     }
     expect(styles).toContain(".summary-grid { display: grid;");
