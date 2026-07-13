@@ -8,12 +8,16 @@ import {
   deleteActivityAndResync,
   deleteExpense,
   deleteItineraryItem,
+  discoverNearbyPlaces,
+  getRouteEstimate,
+  getWeather,
   getMe,
   patchActivity,
   patchExpense,
   patchItineraryItem,
   patchPlan,
   reorderItineraryItem,
+  searchPlaces,
   setPlanLifecycle
 } from "@/lib/api-client";
 
@@ -97,6 +101,19 @@ describe("API app JWT refresh", () => {
     expect(fetchMock.mock.calls[1][0]).toContain("/plans/plan-1/finalize");
     expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({ expected_version: 5 });
     expect(JSON.parse(String(fetchMock.mock.calls[2][1]?.body))).toEqual({ expected_version: 3, name: "Edited" });
+  });
+
+  it("matches every Phase 2 FastAPI query contract exactly", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ status: "ok", results: [] }), { status: 200 })));
+    vi.stubGlobal("fetch", fetchMock);
+    await searchPlaces("token", "plan-1", "Golden Gate Park");
+    await discoverNearbyPlaces("token", "plan-1", { south: 37.7, west: -122.5, north: 37.8, east: -122.4, placeType: "cafe" });
+    await getRouteEstimate("token", "plan-1", { lat: 37.7, lng: -122.5 }, { lat: 37.8, lng: -122.4 });
+    await getWeather("token", "plan-1", 37.7, -122.5);
+    expect(fetchMock.mock.calls[0][0]).toContain("/plans/plan-1/place-search?query=Golden%20Gate%20Park");
+    expect(fetchMock.mock.calls[1][0]).toContain("south=37.7&west=-122.5&north=37.8&east=-122.4&place_type=cafe");
+    expect(fetchMock.mock.calls[2][0]).toContain("origin_lat=37.7&origin_lng=-122.5&destination_lat=37.8&destination_lng=-122.4");
+    expect(fetchMock.mock.calls[3][0]).toContain("/plans/plan-1/weather?latitude=37.7&longitude=-122.5");
   });
 
   it("sends itinerary create, edit, reorder, and delete contracts exactly", async () => {

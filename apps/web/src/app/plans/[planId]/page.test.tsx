@@ -133,9 +133,9 @@ describe("Phase 1B.5 planning UI", () => {
 
   it("saves integer-cent constraints and activity edits with current versions", async () => {
     await renderPlan();
-    fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
-    fireEvent.change(screen.getByLabelText("Budget"), { target: { value: "10.05" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save constraints" }));
+    fireEvent.click(screen.getByRole("button", { name: /Budget.*Open editor/ }));
+    fireEvent.change(screen.getByLabelText("Budget (USD)"), { target: { value: "10.05" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save budget" }));
     await waitFor(() => expect(patchPlan).toHaveBeenCalledWith("app-jwt", "plan-1", expect.objectContaining({ expected_version: 4, budget_cents: 1005 })));
     expect(vi.mocked(patchPlan).mock.calls[0][2]).not.toHaveProperty("max_drive_minutes");
 
@@ -231,8 +231,8 @@ describe("Phase 1B.5 planning UI", () => {
   it("restores authoritative state and reports stale optimistic-concurrency conflicts", async () => {
     vi.mocked(patchPlan).mockRejectedValue(new ApiError(409, { detail: { error: "version_conflict" } }));
     await renderPlan();
-    fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save constraints" }));
+    fireEvent.click(screen.getByRole("button", { name: /Budget.*Open editor/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save budget" }));
     expect(await screen.findByText("This plan changed since you loaded it. The latest state has been restored.")).toBeTruthy();
     expect(resyncPlan).toHaveBeenCalledTimes(2);
   });
@@ -314,9 +314,9 @@ describe("Phase 1B.5 planning UI", () => {
     expect(screen.getByRole("heading", { name: "Nearby places" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Route estimate" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Weather" })).toBeTruthy();
-    fireEvent.change(screen.getByLabelText(/Find a place/), { target: { value: "Gallery" } });
-    fireEvent.click(screen.getByRole("button", { name: "Search places" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Use Gallery" }));
+    fireEvent.change(screen.getByLabelText(/Search and select destination/), { target: { value: "Gallery" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search destinations" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use destination" }));
     expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Gallery");
     expect((screen.getByLabelText(/^Address/) as HTMLInputElement).value).toBe("1 Main");
   });
@@ -370,6 +370,7 @@ describe("Phase 1B.5 planning UI", () => {
     await waitFor(() => expect(createComment).toHaveBeenCalledWith("app-jwt", "plan-1", "activity-1", "Another", "operation-id"));
     fireEvent.click(screen.getAllByRole("button", { name: "Accept" })[0]);
     await waitFor(() => expect(decideActivitySuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", "activity-1", "suggestion-1", "accept", 3, "operation-id"));
+    fireEvent.click(screen.getByRole("button", { name: /Date window.*Open editor/ }));
     fireEvent.change(screen.getByLabelText("Date"), { target: { value: "2026-07-18" } }); fireEvent.click(screen.getByRole("button", { name: "Save availability" }));
     await waitFor(() => expect(upsertDateAvailability).toHaveBeenCalled());
     expect(screen.getByText(/Jul 18, 2026 – Jul 21, 2026/)).toBeTruthy();
@@ -384,19 +385,19 @@ describe("Phase 1B.5 planning UI", () => {
     owner.plan.travel_duration_minutes = 125;
     owner.plan.travel_notes = "Meet at the station";
     await renderPlan(owner);
-    fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
+    fireEvent.click(screen.getByRole("button", { name: /Travel duration.*Open editor/ }));
     expect((screen.getByLabelText("Travel hours") as HTMLInputElement).value).toBe("2");
     expect((screen.getByLabelText("Travel minutes") as HTMLInputElement).value).toBe("5");
     fireEvent.change(screen.getByLabelText("Travel hours"), { target: { value: "3" } });
     fireEvent.change(screen.getByLabelText("Travel minutes"), { target: { value: "20" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save constraints" }));
-    await waitFor(() => expect(patchPlan).toHaveBeenCalledWith("app-jwt", "plan-1", expect.objectContaining({ travel_mode: "train", travel_duration_minutes: 200, travel_notes: "Meet at the station" })));
+    fireEvent.click(screen.getByRole("button", { name: "Save duration" }));
+    await waitFor(() => expect(patchPlan).toHaveBeenCalledWith("app-jwt", "plan-1", expect.objectContaining({ travel_duration_minutes: 200 })));
     await waitFor(() => expect(resyncPlan).toHaveBeenCalledTimes(2));
 
     cleanup();
     await renderPlan(snapshot("member"));
-    expect(screen.getByText("Only an owner or co-owner can edit constraints.")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Edit settings" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Trip notes.*Open editor/ }));
+    expect(screen.getByText("No trip notes yet.")).toBeTruthy();
   });
 
   it("keeps native discussion disclosure accessible and resyncs travel-window votes", async () => {
@@ -441,7 +442,7 @@ describe("Phase 1B.5 planning UI", () => {
     const overview = screen.getByLabelText("Plan overview");
     expect(overview.textContent).toContain("TransportationTrain");
     expect(overview.textContent).toContain("Travel duration2h 5m");
-    expect(screen.queryByRole("button", { name: "Edit settings" })).toBeNull();
+    expect(screen.getByRole("button", { name: /Transportation.*Open editor/ })).toBeTruthy();
 
     const refreshed = snapshot("member");
     refreshed.plan.travel_mode = "plane";
@@ -458,9 +459,8 @@ describe("Phase 1B.5 planning UI", () => {
     next.plan_suggestions = [{ id: "plan-idea", title: "Mountain weekend", description: null, starts_on: null, ends_on: null, budget_cents: null, max_drive_minutes: null, travel_mode: null, travel_duration_minutes: null, status: "open", author_id: "user-2", author_display_name: "Member", created_at: "2026-01-01" }];
     await renderPlan(next);
 
-    expect(screen.getByText(/Trip dates: Aug 1, 2026/)).toBeTruthy();
     expect(screen.getByText("1 open suggestion.")).toBeTruthy();
-    for (const title of ["Travel window", "Travel-window poll", "Trip ideas", "Expenses"]) {
+    for (const title of ["Travel-window poll", "Trip ideas", "Expenses"]) {
       const button = screen.getByRole("button", { name: `Collapse ${title}` });
       expect(button.getAttribute("aria-expanded")).toBe("true");
       fireEvent.click(button);
@@ -696,5 +696,17 @@ describe("Phase 1B.5 planning UI", () => {
     resolve({ status: "unavailable", results: [] });
     await screen.findByText(/Place search unavailable/);
     expect(address.value).toBe("Manual cabin address");
+  });
+
+  it("opens each dashboard editor as a closable portal dialog and removes the old Trip parameters section", async () => {
+    await renderPlan();
+    expect(screen.queryByRole("heading", { name: /Trip parameters/i })).toBeNull();
+    for (const [tile, dialog] of [["Date window", "Date Window"], ["Transportation", "Transportation"], ["Travel duration", "Travel Duration"], ["Budget", "Budget"], ["Trip notes", "Trip Notes"]] as const) {
+      fireEvent.click(screen.getByRole("button", { name: new RegExp(`${tile}.*Open editor`, "i") }));
+      expect(screen.getByRole("dialog", { name: dialog })).toBeTruthy();
+      fireEvent.keyDown(document, { key: "Escape" });
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: dialog })).toBeNull());
+    }
+    expect(document.querySelector(".vote-visibility-control")?.textContent).toContain("Vote visibility: Public");
   });
 });

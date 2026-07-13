@@ -165,6 +165,13 @@ fieldset input { width: auto; min-height: auto; }
 .summary-grid .stat:first-child { background: var(--cobalt); color: white; }
 .summary-grid .stat:first-child span, .summary-grid .stat:first-child i { color: #dfe7ff; }
 .summary-grid .stat:first-child::after { background: linear-gradient(90deg, white, var(--cyan)); }
+.dashboard-tile { width: 100%; color: inherit; text-align: left; cursor: pointer; }
+.dashboard-tile:focus-visible, .trip-members-trigger:focus-visible { outline: 3px solid var(--cyan); outline-offset: -3px; }
+.dashboard-tile small { display: block; margin-top: var(--space-2); color: var(--cobalt-strong); font-size: .7rem; font-weight: 800; }
+.trip-notes-preview { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: pre-wrap; }
+.trip-notes-full { white-space: pre-wrap; }
+.vote-visibility-control { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-3); color: rgb(255 255 255 / 88%); font-size: .84rem; }
+.vote-visibility-control .btn { min-height: 32px; color: white; }
 
 .trip-members-stat { overflow: visible; }
 .trip-members-trigger { display: grid; width: 100%; gap: var(--space-2); padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
@@ -174,6 +181,8 @@ fieldset input { width: auto; min-height: auto; }
 .member-overflow { flex: 0 0 auto; color: var(--cobalt-strong); font-size: .73rem; font-weight: 850; white-space: nowrap; }
 .trip-members-overlay { position: fixed; z-index: var(--z-modal); inset: 0; display: grid; place-items: center; padding: var(--space-4); background: rgb(11 18 36 / 38%); backdrop-filter: blur(3px); animation: overlay-in var(--transition-panel) var(--ease-out); }
 .trip-members-popover { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: var(--space-3); width: min(720px, 100%); max-height: min(82dvh, 720px); padding: var(--space-5); overflow: hidden; border: 1px solid rgb(255 255 255 / 72%); border-radius: var(--radius-lg); background: rgb(255 255 255 / 94%); box-shadow: 0 24px 56px rgb(8 19 46 / 22%), inset 0 1px rgb(255 255 255 / 88%), inset 0 0 0 1px rgb(197 209 229 / 68%); backdrop-filter: blur(12px); animation: panel-in var(--transition-panel) var(--ease-out); }
+.dashboard-modal { grid-template-rows: auto minmax(0, 1fr); }
+.dashboard-modal-content { min-height: 0; overflow: auto; padding-right: 2px; }
 .member-panel-close { display: inline-grid; width: 34px; height: 34px; place-items: center; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--text); font-size: 1.45rem; line-height: 1; cursor: pointer; }
 .member-panel-close:hover { border-color: var(--line); background: var(--surface-soft); }
 .trip-members-list { display: grid; gap: 4px; min-height: 0; overflow: auto; }
@@ -192,6 +201,8 @@ fieldset input { width: auto; min-height: auto; }
 .external-integration-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 .external-integrations .subcard > .subcard { padding: 0; border: 0; background: transparent; }
 .external-results { display: grid; gap: var(--space-2); }
+.external-place-result { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.external-place-result p { margin: 3px 0 0; }
 .external-selected-place { margin-top: var(--space-3); }
 
 .member-row { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 11px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); transition: background var(--transition-fast) var(--ease-out); }

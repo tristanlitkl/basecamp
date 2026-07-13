@@ -37,7 +37,7 @@ describe("Phase 2 external-data UI", () => {
     await waitFor(() => expect(searchPlaces).toHaveBeenCalledWith("jwt", "plan", "Cafe"));
     expect(screen.getByRole("button", { name: "Searching…" })).toBeTruthy();
     resolve({ status: "ok", results: [{ name: "Cafe", latitude: 1, longitude: 2, address: "1 Main", type: "cafe" }] });
-    fireEvent.click(await screen.findByRole("button", { name: "Use Cafe" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use place" }));
     expect(select).toHaveBeenCalledWith(expect.objectContaining({ address: "1 Main" }));
   });
 
@@ -51,24 +51,27 @@ describe("Phase 2 external-data UI", () => {
     expect(input.value).toBe("Manual address");
   });
 
-  it("exposes nearby discovery, route, weather, and activity-assist actions without automatic provider calls", async () => {
+  it("uses selected destination and origin for nearby discovery, route, weather, and activity-assist actions", async () => {
     const usePlace = vi.fn();
     vi.mocked(searchPlaces).mockResolvedValue({ status: "cached", results: [{ name: "Cafe", latitude: 1, longitude: 2, address: "1 Main", type: "cafe" }] });
     vi.mocked(discoverNearbyPlaces).mockResolvedValue({ status: "stale", results: [{ name: "Museum", latitude: 1.01, longitude: 2.01, address: "2 Main", type: "museum" }] });
     vi.mocked(getRouteEstimate).mockResolvedValue({ status: "unavailable", distance_meters: 1609, duration_minutes: 3, approximate: true });
     vi.mocked(getWeather).mockResolvedValue({ status: "cached", temperature_celsius: 20, weather_code: 1, weather_score: 0.8 });
-    render(<PlanIntegrations token="jwt" planId="plan" origin={{ lat: 3, lng: 4, name: "Origin" }} onUsePlace={usePlace} />);
+    render(<PlanIntegrations token="jwt" planId="plan" onUsePlace={usePlace} />);
 
     expect(discoverNearbyPlaces).not.toHaveBeenCalled();
     expect(getRouteEstimate).not.toHaveBeenCalled();
     expect(getWeather).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText(/Find a place/), { target: { value: "Cafe" } });
-    fireEvent.click(screen.getByRole("button", { name: "Search places" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Use Cafe" }));
+    fireEvent.change(screen.getByLabelText(/Search and select destination/), { target: { value: "Cafe" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search destinations" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use destination" }));
     expect(usePlace).toHaveBeenCalledWith(expect.objectContaining({ name: "Cafe" }));
-    fireEvent.click(screen.getByRole("button", { name: "Find nearby places" }));
+    fireEvent.click(screen.getByRole("button", { name: "Find nearby" }));
     await waitFor(() => expect(discoverNearbyPlaces).toHaveBeenCalledWith("jwt", "plan", expect.objectContaining({ placeType: "cafe" })));
-    expect(await screen.findByRole("button", { name: "Use Museum" })).toBeTruthy();
+    expect(await screen.findByText("Museum")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(/Search and select origin/), { target: { value: "Origin" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search origins" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use origin" }));
     fireEvent.click(screen.getByRole("button", { name: "Estimate route" }));
     expect(await screen.findByText(/displayed estimate is approximate/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Check weather" }));

@@ -19,6 +19,7 @@ type AvailabilityCalendarProps = {
   members: PlanMember[];
   availability: DateAvailability[];
   suggestions: DateSuggestion[];
+  onOpenEditor?: () => void;
 };
 
 /** Date-only utilities deliberately avoid `new Date("YYYY-MM-DD")` local-time parsing. */
@@ -57,7 +58,7 @@ function availabilitySummary(day: CalendarDay) {
   return parts.join(", ");
 }
 
-export function AvailabilityCalendar({ plan, members, availability, suggestions }: AvailabilityCalendarProps) {
+export function AvailabilityCalendar({ plan, members, availability, suggestions, onOpenEditor }: AvailabilityCalendarProps) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const boundaries = useMemo(() => [plan.starts_on, plan.ends_on, ...availability.map((entry) => entry.date), ...suggestions.flatMap((suggestion) => [suggestion.starts_on, suggestion.ends_on])]
     .filter((value): value is string => Boolean(value)).map(dayKey), [plan.starts_on, plan.ends_on, availability, suggestions]);
@@ -98,11 +99,11 @@ export function AvailabilityCalendar({ plan, members, availability, suggestions 
   const leadingSuggestion = sortedSuggestions(suggestions).find((suggestion) => suggestion.status === "open") ?? sortedSuggestions(suggestions)[0];
 
   if (!earliest || !latest) return <section aria-labelledby="availability-calendar-heading" className="availability-calendar">
-    <div className="calendar-heading"><div><p className="eyebrow">Coordinate</p><h2 id="availability-calendar-heading">Group availability</h2><p className="muted small">Set trip dates or add a date option to begin comparing group availability.</p></div><a className="btn btn-secondary" href="#travel-window">Open travel window</a></div><CalendarLegend />
+    <div className="calendar-heading"><div><p className="eyebrow">Coordinate</p><h2 id="availability-calendar-heading">Group availability</h2><p className="muted small">Set trip dates or add a date option to begin comparing group availability.</p></div>{onOpenEditor ? <button className="btn btn-secondary" type="button" onClick={onOpenEditor}>Open date window</button> : null}</div><CalendarLegend />
   </section>;
 
   return <section aria-labelledby="availability-calendar-heading" className="availability-calendar">
-    <div className="calendar-heading"><div><p className="eyebrow">Coordinate</p><h2 id="availability-calendar-heading">Group availability</h2><p className="muted small">{dateLabel(earliest, { month: "long", day: "numeric", year: "numeric" })} – {dateLabel(latest, { month: "long", day: "numeric", year: "numeric" })}</p></div><a className="btn btn-secondary" href="#travel-window">Update availability</a></div>
+    <div className="calendar-heading"><div><p className="eyebrow">Coordinate</p><h2 id="availability-calendar-heading">Group availability</h2><p className="muted small">{dateLabel(earliest, { month: "long", day: "numeric", year: "numeric" })} – {dateLabel(latest, { month: "long", day: "numeric", year: "numeric" })}</p></div>{onOpenEditor ? <button className="btn btn-secondary" type="button" onClick={onOpenEditor}>Update availability</button> : null}</div>
     {leadingSuggestion && <p className="calendar-leading" aria-label={`Leading date option: ${dateLabel(leadingSuggestion.starts_on)} through ${dateLabel(leadingSuggestion.ends_on)}, ${leadingSuggestion.yes_votes} yes, ${leadingSuggestion.maybe_votes} maybe, ${leadingSuggestion.no_votes} no`}><strong>Leading option</strong><span>{dateLabel(leadingSuggestion.starts_on)} – {dateLabel(leadingSuggestion.ends_on)} · ✓ {leadingSuggestion.yes_votes} · ❓ {leadingSuggestion.maybe_votes} · × {leadingSuggestion.no_votes}</span></p>}
     <CalendarLegend />
     <div className="calendar-months" aria-label="Availability calendar">
