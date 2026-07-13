@@ -121,6 +121,21 @@ export function searchPlaces(token: string, planId: string, query: string): Prom
   return apiFetch(token, `/plans/${planId}/place-search?query=${encodeURIComponent(query)}`);
 }
 
+export function discoverNearbyPlaces(
+  token: string,
+  planId: string,
+  input: { south: number; west: number; north: number; east: number; placeType: string }
+): Promise<PlaceSearchResponse> {
+  const query = new URLSearchParams({
+    south: String(input.south),
+    west: String(input.west),
+    north: String(input.north),
+    east: String(input.east),
+    place_type: input.placeType
+  });
+  return apiFetch(token, `/plans/${planId}/nearby-places?${query}`);
+}
+
 export function getRouteEstimate(token: string, planId: string, origin: { lat: number; lng: number }, destination: { lat: number; lng: number }): Promise<RouteEstimate> {
   const query = new URLSearchParams({ origin_lat: String(origin.lat), origin_lng: String(origin.lng), destination_lat: String(destination.lat), destination_lng: String(destination.lng) });
   return apiFetch(token, `/plans/${planId}/route-estimate?${query}`);

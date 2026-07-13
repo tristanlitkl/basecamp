@@ -277,6 +277,50 @@ describe("Phase 1B.5 planning UI", () => {
     expect(screen.queryByRole("button", { name: "Remove from trip" })).toBeNull();
   });
 
+  it("renders the Trip Members dialog in document.body with a fixed overlay, internal scrolling, and usable close controls", async () => {
+    const owner = snapshot();
+    for (let index = 3; index < 36; index += 1) owner.members.push({ id: `pm-${index}`, plan_id: "plan-1", user_id: `user-${index}`, role: "member", display_name: `Member ${index}`, created_at: "2026-02-03" });
+    await renderPlan(owner);
+    const trigger = screen.getByRole("button", { name: /Trip members/ });
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Trip Members" });
+    const overlay = dialog.parentElement!;
+    expect(overlay.parentElement).toBe(document.body);
+    expect(overlay.className).toContain("trip-members-overlay");
+    expect(dialog.className).toContain("trip-members-popover");
+    expect(dialog.querySelector(".trip-members-list")?.textContent).toContain("Member 35");
+    expect(document.body.style.overflow).toBe("hidden");
+    const styles = readFileSync("src/app/globals.css", "utf8");
+    expect(styles).toContain(".trip-members-overlay { position: fixed;");
+    expect(styles).toContain("inset: 0;");
+    expect(styles).toContain(".trip-members-list { display: grid; gap: 4px; min-height: 0; overflow: auto;");
+    expect(styles).toContain("max-height: calc(100dvh - 24px)");
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Trip Members" })).toBeNull());
+    expect(document.body.style.overflow).toBe("");
+
+    fireEvent.click(trigger);
+    fireEvent.mouseDown(screen.getByRole("dialog", { name: "Trip Members" }).parentElement!);
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Trip Members" })).toBeNull());
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("button", { name: "Close trip members" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Trip Members" })).toBeNull());
+  });
+
+  it("keeps Phase 2 helpers visible on plan detail and uses successful place selections to assist manual activity entry", async () => {
+    vi.mocked(searchPlaces).mockResolvedValue({ status: "ok", results: [{ name: "Gallery", latitude: 1, longitude: 2, address: "1 Main", type: "gallery" }] });
+    await renderPlan();
+    expect(screen.getByRole("heading", { name: "Explore places" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Nearby places" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Route estimate" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Weather" })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(/Find a place/), { target: { value: "Gallery" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search places" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use Gallery" }));
+    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Gallery");
+    expect((screen.getByLabelText(/^Address/) as HTMLInputElement).value).toBe("1 Main");
+  });
+
   it("Phase 1B.75 public and anonymous votes render privacy-safe identities and totals", async () => {
     const publicSnapshot = snapshot();
     publicSnapshot.votes = [{ activity_id: "activity-1", user_id: "user-2", vote: "yes" }];
@@ -644,8 +688,8 @@ describe("Phase 1B.5 planning UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "+ Add activity" }));
     const address = screen.getByLabelText(/^Address/) as HTMLInputElement;
     fireEvent.change(address, { target: { value: "Manual cabin address" } });
-    fireEvent.change(screen.getByLabelText(/Find a place/), { target: { value: "Cabin" } });
-    fireEvent.click(screen.getByRole("button", { name: "Search places" }));
+    fireEvent.change(screen.getByLabelText(/Find a place for this activity/), { target: { value: "Cabin" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search activity places" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Searching…" })).toBeTruthy());
     expect(address.disabled).toBe(false);
     expect(address.value).toBe("Manual cabin address");

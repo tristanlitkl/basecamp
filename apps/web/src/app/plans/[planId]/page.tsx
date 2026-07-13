@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import React from "react";
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import {
   ApiError,
@@ -47,7 +48,7 @@ import {
   voteDateSuggestion,
   withdrawCoOwnerRequest
 } from "@/lib/api-client";
-import { PlaceSearch, RouteEstimateNotice, WeatherNotice } from "@/components/plans/external-data";
+import { PlaceSearch, PlanIntegrations, RouteEstimateNotice, WeatherNotice } from "@/components/plans/external-data";
 import { formatCents, parseDollarCents } from "@/lib/money";
 import { connectionLabel } from "@/hooks/useConnectionStatus";
 import { usePlanSocket } from "@/hooks/usePlanSocket";
@@ -109,6 +110,8 @@ function TripMembersCard({
   const close = () => { setExpanded(false); requestAnimationFrame(() => triggerRef.current?.focus()); };
   useEffect(() => {
     if (!expanded) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     panelRef.current?.querySelector<HTMLElement>("button")?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") { event.preventDefault(); close(); return; }
@@ -120,7 +123,10 @@ function TripMembersCard({
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     };
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [expanded]);
   return <div className="card stat trip-members-stat" onKeyDown={(event) => { if (event.key === "Escape" && expanded) { event.preventDefault(); close(); } }}>
     <button ref={triggerRef} aria-controls="trip-members-directory" aria-expanded={expanded} className="trip-members-trigger" onClick={() => setExpanded((open) => !open)} type="button">
@@ -130,13 +136,13 @@ function TripMembersCard({
         {sortedMembers.length > 3 && <span className="member-overflow" aria-label={`${sortedMembers.length - 3} more members`}>+{sortedMembers.length - 3} more</span>}
       </span>
     </button>
-    {expanded && <div className="trip-members-overlay"><div ref={panelRef} className="trip-members-popover" id="trip-members-directory" role="dialog" aria-modal="true" aria-label="Trip Members">
+    {expanded && createPortal(<div className="trip-members-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><div ref={panelRef} className="trip-members-popover" id="trip-members-directory" role="dialog" aria-modal="true" aria-label="Trip Members">
       <div className="split"><strong>Trip Members</strong><button aria-label="Close trip members" className="member-panel-close" onClick={close} type="button">×</button></div>
       <div className="trip-members-list">{sortedMembers.map((member) => <article className="member-panel-row" key={member.user_id}><span className="member-plain-emoji" aria-hidden="true">{avatarEmoji(member.avatar_emoji)}</span><span className="member-directory-name"><strong>{member.display_name}</strong>{member.user_id === currentUserId && <small>You</small>}</span><span className={`badge badge-${member.role}`}>{member.role.replace("_", "-")}</span>{role === "owner" && member.role !== "owner" && member.user_id !== currentUserId && <span className="member-actions"><button className="btn btn-secondary" disabled={disabled} onClick={() => onChangeRole(member.user_id, member.role === "co_owner" ? "member" : "co_owner")}>{member.role === "co_owner" ? "Demote to member" : "Promote to co-owner"}</button><button className="btn btn-danger" disabled={disabled} onClick={() => setRemoveTarget(member.user_id)}>Remove from trip</button></span>}{role === "co_owner" && member.role === "member" && member.user_id !== currentUserId && <span className="member-actions"><button className="btn btn-danger" disabled={disabled} onClick={() => setRemoveTarget(member.user_id)}>Remove from trip</button></span>}</article>)}</div>
       {removeTarget && <div className="remove-confirmation" role="alertdialog" aria-label="Confirm member removal"><p>Remove {sortedMembers.find((member) => member.user_id === removeTarget)?.display_name} from this trip?</p><div className="cluster"><button className="btn btn-danger" disabled={disabled} onClick={() => { onRemove(removeTarget); setRemoveTarget(null); }}>Confirm removal</button><button className="btn btn-secondary" onClick={() => setRemoveTarget(null)}>Cancel</button></div></div>}
       {role === "member" && <div className="co-owner-request-panel"><strong>Co-owner access</strong>{ownRequest?.status === "pending" ? <div className="cluster"><span className="muted small">Request pending</span><button className="btn btn-secondary" disabled={disabled} onClick={() => onWithdraw(ownRequest.id, ownRequest.version)}>Withdraw request</button></div> : <><p className="muted small">Ask the primary owner for help managing this trip.</p><button className="btn btn-secondary" disabled={disabled} onClick={onRequest}>Request co-owner access</button>{ownRequest && <p className="muted small">Latest request: {ownRequest.status}</p>}</>}</div>}
       {role === "owner" && <div className="co-owner-request-panel"><strong>Co-owner requests</strong>{pendingRequests.length === 0 ? <p className="muted small">No pending requests.</p> : pendingRequests.map((request) => <div className="co-owner-request-row" key={request.id}><span className="member-plain-emoji" aria-hidden="true">{avatarEmoji(request.requester_avatar_emoji)}</span><span className="member-directory-name"><strong>{request.requester_display_name}</strong><small>{new Date(request.created_at).toLocaleDateString()} {request.note ? `· ${request.note}` : ""}</small></span><span className="member-actions"><button className="btn" disabled={disabled} onClick={() => onDecision(request.id, "approve", request.version)}>Approve</button><button className="btn btn-secondary" disabled={disabled} onClick={() => onDecision(request.id, "deny", request.version)}>Deny</button></span></div>)}</div>}
-    </div></div>}
+    </div></div>, document.body)}
   </div>;
 }
 
@@ -441,6 +447,21 @@ export default function PlanPage() {
       {canManage && <label className="field" style={{ marginTop: 14 }}>Vote visibility <select value={plan.vote_visibility} disabled={disabled} onChange={(event) => void mutate(() => updateVoteVisibility(session.appJwt!, planId, event.target.value as "public" | "anonymous", plan.version))}><option value="public">Public votes</option><option value="anonymous">Anonymous votes</option></select></label>}
     </section>
 
+    <PlanIntegrations
+      disabled={disabled}
+      origin={plan.activities.find((activity) => activity.lat !== null && activity.lng !== null) ? (() => { const activity = plan.activities.find((candidate) => candidate.lat !== null && candidate.lng !== null)!; return { lat: Number(activity.lat), lng: Number(activity.lng), name: activity.name }; })() : null}
+      onUsePlace={(place) => {
+        setSelectedPlace(place);
+        setActivityName((current) => current || place.name);
+        setActivityAddress((current) => current || place.address || place.name);
+        setRouteEstimate(null);
+        setWeather(null);
+        setShowActivityForm(true);
+      }}
+      planId={planId}
+      token={session.appJwt!}
+    />
+
     <DisclosureSection id="trip-ideas" title="Trip ideas" summary={`${plan.activities.length} ${plan.activities.length === 1 ? "activity" : "activities"} to explore and vote on.`} actions={<button className="btn" disabled={disabled} type="button" onClick={() => setShowActivityForm((value) => !value)}>{showActivityForm ? "Cancel" : "+ Add activity"}</button>}>
       {showActivityForm && <form className="form-grid subcard" onSubmit={(event: FormEvent) => {
         event.preventDefault(); const cents = activityCost ? parseDollarCents(activityCost) : undefined;
@@ -452,7 +473,7 @@ export default function PlanPage() {
         <label className="field">Name <input value={activityName} onChange={(event) => setActivityName(event.target.value)} disabled={disabled} /></label>
         <label className="field">Description <span className="optional">Optional</span><input value={activityDescription} onChange={(event) => setActivityDescription(event.target.value)} disabled={disabled} /></label>
         <label className="field">Address <span className="optional">Optional</span><input value={activityAddress} onChange={(event) => setActivityAddress(event.target.value)} disabled={disabled} /></label>
-        <div className="form-span"><PlaceSearch token={session.appJwt!} planId={planId} disabled={disabled} onSelect={(place) => { setSelectedPlace(place); setActivityAddress(place.address || place.name); setRouteEstimate(null); setWeather(null); }} />
+        <div className="form-span"><PlaceSearch token={session.appJwt!} planId={planId} disabled={disabled} label="Find a place for this activity" actionLabel="Search activity places" onSelect={(place) => { setSelectedPlace(place); setActivityAddress(place.address || place.name); setRouteEstimate(null); setWeather(null); }} />
           {selectedPlace && <div className="cluster"><span className="muted small">Selected: {selectedPlace.name}</span><button className="btn btn-secondary" type="button" disabled={disabled} onClick={() => void getWeather(session.appJwt!, planId, selectedPlace.latitude, selectedPlace.longitude).then(setWeather).catch(() => setWeather({ status: "unavailable", temperature_celsius: null, weather_code: null, weather_score: 0.5 }))}>Check weather</button>{plan.activities.find((activity) => activity.lat !== null && activity.lng !== null) && <button className="btn btn-secondary" type="button" disabled={disabled} onClick={() => { const origin = plan.activities.find((activity) => activity.lat !== null && activity.lng !== null)!; void getRouteEstimate(session.appJwt!, planId, { lat: Number(origin.lat), lng: Number(origin.lng) }, { lat: selectedPlace.latitude, lng: selectedPlace.longitude }).then(setRouteEstimate).catch(() => setRouteEstimate({ status: "unavailable", distance_meters: 0, duration_minutes: 0, approximate: true })); }}>Estimate route</button>}</div>}
           <WeatherNotice weather={weather} /><RouteEstimateNotice estimate={routeEstimate} /></div>
         <label className="field">Estimated cost <span className="optional">Optional</span><input value={activityCost} inputMode="decimal" onChange={(event) => setActivityCost(event.target.value)} disabled={disabled} /></label>
