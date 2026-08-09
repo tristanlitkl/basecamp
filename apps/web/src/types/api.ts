@@ -174,4 +174,4 @@ export type ExternalErrorCategory = "rate_limit" | "provider_unavailable" | "mal
 export type PlaceResult = { name: string; latitude: number; longitude: number; address: string | null; type: string | null };
 export type PlaceSearchResponse = { status: ExternalStatus; results: PlaceResult[]; error_category?: ExternalErrorCategory | null };
 export type RouteEstimate = { status: ExternalStatus; distance_meters: number; duration_minutes: number; approximate: boolean; error_category?: ExternalErrorCategory | null };
-export type WeatherResponse = { status: ExternalStatus; temperature_celsius: number | null; weather_code: number | null; weather_score: number; error_category?: ExternalErrorCategory | null };
+export type WeatherResponse = { status: ExternalStatus; temperature_celsius: number | null; weather_code: number | null; weather_condition: string | null; forecast_hour: string; weather_score: number; error_category?: ExternalErrorCategory | null };

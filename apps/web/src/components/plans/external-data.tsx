@@ -171,5 +171,8 @@ export function RouteEstimateNotice({ estimate }: { estimate: RouteEstimate | nu
 
 export function WeatherNotice({ weather }: { weather: WeatherResponse | null }) {
   if (!weather) return null;
-  return <div><ExternalStatusMessage kind="weather" status={weather.status} errorCategory={weather.error_category} />{weather.temperature_celsius !== null && <p className="muted small">Weather: {weather.temperature_celsius.toFixed(1)}°C{weather.weather_code !== null ? ` · conditions code ${weather.weather_code}` : ""}</p>}<p className="muted small">Forecast time: current requested hour.</p></div>;
+  const forecastTime = new Intl.DateTimeFormat("en", {
+    dateStyle: "medium", timeStyle: "short", timeZone: "UTC"
+  }).format(new Date(weather.forecast_hour));
+  return <div><ExternalStatusMessage kind="weather" status={weather.status} errorCategory={weather.error_category} />{weather.temperature_celsius !== null && <p className="muted small">Weather: {weather.temperature_celsius.toFixed(1)}°C{weather.weather_condition ? ` · ${weather.weather_condition}` : ""}</p>}<p className="muted small">Forecast time: {forecastTime} UTC.</p></div>;
 }

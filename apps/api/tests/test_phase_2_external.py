@@ -24,6 +24,7 @@ from app.services.external_api_service import (
     reset_external_service_state,
     route_key,
     search_places,
+    weather_condition,
     weather_key,
 )
 from test_phase_1a5 import bearer, client_context, create_plan, sync_user
@@ -102,6 +103,35 @@ def test_phase2_equivalent_decimal_weather_coordinates_share_one_postgres_cache_
     assert count == 1
     assert latitude == Decimal("37.334900")
     assert longitude == Decimal("-122.009000")
+
+
+def test_phase2_weather_responses_expose_readable_conditions_and_canonical_forecast_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_weather(*_args, **_kwargs):
+        return {"temperature_celsius": 20.0, "weather_code": 3}
+
+    monkeypatch.setattr("app.services.external_api_service.open_meteo.get_weather", fake_weather)
+    forecast = "2031-01-01T12:45:00Z"
+    latitude = 10 + (uuid4().int % 1_000_000) / 1_000_000
+    with client_context() as client:
+        jwt, plan_id = create_plan(client, f"owner-{uuid4()}")
+        response = client.get(
+            f"/plans/{plan_id}/weather?latitude={latitude}&longitude=-122.009&forecast_hour={forecast.replace(':', '%3A')}",
+            headers=bearer(jwt),
+        )
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "temperature_celsius": 20.0,
+        "weather_code": 3,
+        "weather_condition": "Overcast",
+        "forecast_hour": "2031-01-01T12:00:00+00:00",
+        "weather_score": 0.8,
+        "error_category": None,
+    }
+    assert weather_condition(95) == "Thunderstorm"
+    assert weather_condition(None) is None
 
 
 def test_phase2_nominatim_fresh_cache_avoids_second_live_call(
@@ -330,6 +360,8 @@ def test_phase2_weather_failure_without_cache_is_neutral(monkeypatch: pytest.Mon
         "status": "unavailable",
         "temperature_celsius": None,
         "weather_code": None,
+        "weather_condition": None,
+        "forecast_hour": "2030-01-01T00:00:00+00:00",
         "weather_score": 0.5,
         "error_category": "provider_unavailable",
     }

@@ -75,8 +75,10 @@ accesses. Cleanup failure is intentionally isolated from the response path.
   unavailable response is a deterministic straight-line estimate and has
   `approximate: true`.
 - `GET /plans/{plan_id}/weather?latitude=&longitude=&forecast_hour=` returns
-  `{status, temperature_celsius, weather_code, weather_score}`. An unavailable
-  response uses the neutral `weather_score` of `0.5`.
+  `{status, temperature_celsius, weather_code, weather_condition, forecast_hour,
+  weather_score}`. `weather_condition` is a readable WMO-code label and
+  `forecast_hour` is the canonical UTC hour actually used for the forecast. An
+  unavailable response uses the neutral `weather_score` of `0.5`.
 
 ## Phase 1B Balances
 

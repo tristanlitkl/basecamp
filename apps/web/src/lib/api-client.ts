@@ -69,7 +69,10 @@ function parseRoute(value: unknown): RouteEstimate {
 
 function parseWeather(value: unknown): WeatherResponse {
   if (!externalBase(value) || (value.temperature_celsius !== null && typeof value.temperature_celsius !== "number") ||
-    (value.weather_code !== null && typeof value.weather_code !== "number") || typeof value.weather_score !== "number" || !Number.isFinite(value.weather_score)) throw new MalformedResponseError();
+    (value.weather_code !== null && typeof value.weather_code !== "number") ||
+    (value.weather_condition !== null && typeof value.weather_condition !== "string") ||
+    typeof value.forecast_hour !== "string" || Number.isNaN(Date.parse(value.forecast_hour)) ||
+    typeof value.weather_score !== "number" || !Number.isFinite(value.weather_score)) throw new MalformedResponseError();
   return value as WeatherResponse;
 }
 

@@ -19,6 +19,7 @@ def cors_client() -> TestClient:
                 database_url="postgresql+asyncpg://unused:unused@localhost/unused",
                 jwt_secret="test-secret",
                 cors_allowed_origins=f"{LOCAL_ORIGIN},{PRODUCTION_ORIGIN}/",
+                cors_allowed_origin_regex=r"https://basecamp(?:-[a-z0-9]+)?-trees6\.vercel\.app",
             )
         )
     )
@@ -60,6 +61,15 @@ def test_patch_preflight_allows_the_configured_production_origin() -> None:
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == PRODUCTION_ORIGIN
+
+
+def test_preflight_allows_the_scoped_immutable_vercel_deployment_url() -> None:
+    origin = "https://basecamp-q3eeuf933-trees6.vercel.app"
+    with cors_client() as client:
+        response = client.options("/auth/me", headers=preflight_headers(origin))
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == origin
 
 
 def test_patch_preflight_rejects_an_unapproved_origin() -> None:

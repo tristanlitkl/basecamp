@@ -25,8 +25,9 @@ describe("Phase 2 external-data UI", () => {
     expect(screen.getByText(/Using cached place results while live search is unavailable/)).toBeTruthy();
     rerender(<RouteEstimateNotice estimate={{ status: "unavailable", distance_meters: 1609, duration_minutes: 3, approximate: true }} />);
     expect(screen.getAllByText(/approximate/i)).toHaveLength(2);
-    rerender(<WeatherNotice weather={{ status: "unavailable", temperature_celsius: null, weather_code: null, weather_score: 0.5 }} />);
+    rerender(<WeatherNotice weather={{ status: "unavailable", temperature_celsius: null, weather_code: null, weather_condition: null, forecast_hour: "2031-01-01T12:00:00Z", weather_score: 0.5 }} />);
     expect(screen.getByText(/Weather unavailable/)).toBeTruthy();
+    expect(screen.getByText(/Forecast time: Jan 1, 2031, 12:00 PM UTC/)).toBeTruthy();
   });
 
   it("uses an explicit action rather than searching on every address keystroke", async () => {
@@ -83,7 +84,7 @@ describe("Phase 2 external-data UI", () => {
     vi.mocked(searchPlaces).mockResolvedValue({ status: "cached", results: [{ name: "Cafe", latitude: 1, longitude: 2, address: "1 Main", type: "cafe" }] });
     vi.mocked(discoverNearbyPlaces).mockResolvedValue({ status: "stale", results: [{ name: "Museum", latitude: 1.01, longitude: 2.01, address: "2 Main", type: "museum" }] });
     vi.mocked(getRouteEstimate).mockResolvedValue({ status: "unavailable", distance_meters: 1609, duration_minutes: 3, approximate: true });
-    vi.mocked(getWeather).mockResolvedValue({ status: "cached", temperature_celsius: 20, weather_code: 1, weather_score: 0.8 });
+    vi.mocked(getWeather).mockResolvedValue({ status: "cached", temperature_celsius: 20, weather_code: 1, weather_condition: "Mainly clear", forecast_hour: "2031-01-01T12:00:00Z", weather_score: 0.8 });
     render(<PlanIntegrations token="jwt" planId="plan" onUsePlace={usePlace} />);
 
     expect(discoverNearbyPlaces).not.toHaveBeenCalled();
@@ -107,5 +108,6 @@ describe("Phase 2 external-data UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "Check weather" }));
     await waitFor(() => expect(getWeather).toHaveBeenCalledWith("jwt", "plan", 1, 2));
     expect(await screen.findByText("Using cached weather.")).toBeTruthy();
+    expect(screen.getByText(/20.0°C · Mainly clear/)).toBeTruthy();
   });
 });

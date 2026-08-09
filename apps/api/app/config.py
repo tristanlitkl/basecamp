@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     jwt_secret: str
     environment: str = "local"
     cors_allowed_origins: str = "http://localhost:3000"
+    # Vercel exposes immutable deployment URLs in addition to the stable project
+    # alias. Restrict this to this project's team-scoped hostname rather than
+    # allowing arbitrary ``*.vercel.app`` origins.
+    cors_allowed_origin_regex: str | None = r"https://basecamp(?:-[a-z0-9]+)?-trees6\.vercel\.app"
 
     @property
     def cors_origins(self) -> list[str]:

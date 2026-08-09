@@ -60,6 +60,8 @@ class WeatherResponse(BaseModel):
     status: Literal["ok", "cached", "stale", "unavailable"]
     temperature_celsius: float | None = None
     weather_code: int | None = None
+    weather_condition: str | None = None
+    forecast_hour: str
     weather_score: float
     error_category: ExternalErrorCategory | None = None
 
@@ -361,12 +363,51 @@ def _weather_response(
         status=status,
         temperature_celsius=record.temperature_celsius,
         weather_code=record.weather_code,
+        weather_condition=weather_condition(record.weather_code),
+        forecast_hour=record.forecast_hour,
         weather_score=record.weather_score,
     )
 
 
 def weather_score(weather_code: int) -> float:
     return 0.8 if weather_code <= 3 else 0.5 if weather_code <= 48 else 0.25
+
+
+def weather_condition(weather_code: int | None) -> str | None:
+    """Translate WMO weather codes before they cross the API boundary."""
+    if weather_code is None:
+        return None
+    labels = {
+        0: "Clear sky",
+        1: "Mainly clear",
+        2: "Partly cloudy",
+        3: "Overcast",
+        45: "Fog",
+        48: "Rime fog",
+        51: "Light drizzle",
+        53: "Moderate drizzle",
+        55: "Dense drizzle",
+        56: "Light freezing drizzle",
+        57: "Dense freezing drizzle",
+        61: "Slight rain",
+        63: "Moderate rain",
+        65: "Heavy rain",
+        66: "Light freezing rain",
+        67: "Heavy freezing rain",
+        71: "Slight snow fall",
+        73: "Moderate snow fall",
+        75: "Heavy snow fall",
+        77: "Snow grains",
+        80: "Slight rain showers",
+        81: "Moderate rain showers",
+        82: "Violent rain showers",
+        85: "Slight snow showers",
+        86: "Heavy snow showers",
+        95: "Thunderstorm",
+        96: "Thunderstorm with slight hail",
+        99: "Thunderstorm with heavy hail",
+    }
+    return labels.get(weather_code, "Unknown conditions")
 
 
 async def get_weather(
@@ -413,6 +454,8 @@ async def get_weather(
             status="ok",
             temperature_celsius=live["temperature_celsius"],
             weather_code=live["weather_code"],
+            weather_condition=weather_condition(live["weather_code"]),
+            forecast_hour=canonical,
             weather_score=score,
         )
     except Exception as error:
@@ -421,6 +464,7 @@ async def get_weather(
             return _weather_response(record, "stale")
         return WeatherResponse(
             status="unavailable",
+            forecast_hour=canonical,
             weather_score=0.5,
             error_category=_provider_error_category(error),
         )
