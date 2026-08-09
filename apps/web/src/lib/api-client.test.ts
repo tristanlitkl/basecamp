@@ -128,6 +128,27 @@ describe("API app JWT refresh", () => {
     await expect(searchPlaces("token", "plan-1", "lake tahoe")).rejects.toBeInstanceOf(MalformedResponseError);
   });
 
+  it("accepts the backend timeout classification for external-data fallbacks", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        status: "unavailable",
+        temperature_celsius: null,
+        weather_code: null,
+        weather_condition: null,
+        forecast_hour: "2031-01-01T12:00:00Z",
+        daily_forecast: [],
+        timezone: null,
+        weather_score: 0.5,
+        error_category: "timeout"
+      }), { status: 200 })
+    ));
+
+    await expect(getWeather("token", "plan-1", 37.7749, -122.4194)).resolves.toMatchObject({
+      status: "unavailable",
+      error_category: "timeout"
+    });
+  });
+
   it("sends itinerary create, edit, reorder, and delete contracts exactly", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 201 }))

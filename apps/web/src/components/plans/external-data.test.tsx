@@ -64,7 +64,7 @@ describe("Phase 2 external-data UI", () => {
     [new ApiError(422, {}), /search text or selected coordinates/i],
     [new ApiError(429, {}), /provider is busy/i],
     [new ApiError(503, {}), /HTTP 503/i],
-    [new TypeError("Failed to fetch"), /Network or CORS failure/i],
+    [new TypeError("Failed to fetch"), /Network request failed/i],
     [new MalformedResponseError(), /Malformed response/i]
   ])("shows a safe specific request error for %s", async (error, expected) => {
     vi.mocked(searchPlaces).mockRejectedValue(error);

@@ -41,7 +41,7 @@ export class MalformedResponseError extends Error {
 }
 
 const externalStatuses = new Set(["ok", "cached", "stale", "unavailable"]);
-const externalErrorCategories = new Set(["rate_limit", "provider_unavailable", "malformed_response"]);
+const externalErrorCategories = new Set(["rate_limit", "timeout", "provider_unavailable", "malformed_response"]);
 
 function externalBase(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== "object") return false;

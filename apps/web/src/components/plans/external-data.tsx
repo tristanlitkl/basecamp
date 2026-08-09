@@ -7,7 +7,7 @@ import type { ExternalErrorCategory, ExternalStatus, PlaceResult, PlaceSearchRes
 
 function requestErrorMessage(error: unknown) {
   if (error instanceof MalformedResponseError) return "Malformed response — the server returned invalid external data. Your current entries were kept.";
-  if (!(error instanceof ApiError)) return "Network or CORS failure — check your connection and try again. Your current entries were kept.";
+  if (!(error instanceof ApiError)) return "Network request failed — check your connection and try again. Your current entries were kept.";
   const messages: Record<number, string> = {
     401: "Your session expired. Sign in again, then retry this request.",
     403: "You do not have permission to use external data for this plan.",
