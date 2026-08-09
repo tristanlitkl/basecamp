@@ -90,11 +90,17 @@ def _provider_error_category(error: Exception) -> ExternalErrorCategory:
 
 def _log_provider_failure(provider: str, error: Exception, **context: object) -> None:
     status_code = error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None
+    retry_after = (
+        error.response.headers.get("Retry-After")
+        if isinstance(error, httpx.HTTPStatusError)
+        else None
+    )
     logger.warning(
-        "external_provider_failure provider=%s category=%s status_code=%s error_type=%s context=%s",
+        "external_provider_failure provider=%s category=%s status_code=%s retry_after=%s error_type=%s context=%s",
         provider,
         _provider_error_category(error),
         status_code,
+        retry_after,
         type(error).__name__,
         context,
     )
@@ -134,8 +140,18 @@ def coordinate_text(value: Decimal | float | int | str) -> str:
 def weather_key(
     latitude: Decimal | float | int | str,
     longitude: Decimal | float | int | str,
+    forecast_hour: str | None = None,
+) -> str:
+    """Identity for a seven-day forecast, independent of request timestamp."""
+    return cache_key("open-meteo-daily-v1", coordinate_text(latitude), coordinate_text(longitude))
+
+
+def legacy_weather_key(
+    latitude: Decimal | float | int | str,
+    longitude: Decimal | float | int | str,
     forecast_hour: str,
 ) -> str:
+    """Read pre-daily-forecast cache rows during their existing TTL only."""
     return cache_key(
         "open-meteo",
         coordinate_text(latitude),
@@ -385,7 +401,9 @@ def _weather_days(values: list[dict]) -> list[WeatherDay]:
 
 
 def _weather_response(
-    record: WeatherSnapshot, status: Literal["cached", "stale"]
+    record: WeatherSnapshot,
+    status: Literal["cached", "stale"],
+    error_category: ExternalErrorCategory | None = None,
 ) -> WeatherResponse:
     return WeatherResponse(
         status=status,
@@ -396,6 +414,7 @@ def _weather_response(
         daily_forecast=_weather_days(record.daily_forecast or []),
         timezone=record.timezone,
         weather_score=record.weather_score,
+        error_category=error_category,
     )
 
 
@@ -448,6 +467,10 @@ async def get_weather(
     normalized_lat, normalized_lng = canonical_coordinate(latitude), canonical_coordinate(longitude)
     key = weather_key(normalized_lat, normalized_lng, canonical)
     record = await _weather_cache(session, key)
+    if record is None:
+        record = await _weather_cache(
+            session, legacy_weather_key(normalized_lat, normalized_lng, canonical)
+        )
     if record and _fresh(record.expires_at, _now()):
         return _weather_response(record, "cached")
     try:
@@ -475,6 +498,9 @@ async def get_weather(
                     "temperature_celsius": live["temperature_celsius"],
                     "weather_code": live["weather_code"],
                     "weather_score": score,
+                    "daily_forecast": live["daily_forecast"],
+                    "timezone": live.get("timezone"),
+                    "forecast_hour": canonical,
                     "status": "ok",
                     "expires_at": _now() + WEATHER_TTL,
                 },
@@ -495,7 +521,7 @@ async def get_weather(
     except Exception as error:
         _log_provider_failure("open-meteo", error, forecast_hour=canonical)
         if record:
-            return _weather_response(record, "stale")
+            return _weather_response(record, "stale", _provider_error_category(error))
         return WeatherResponse(
             status="unavailable",
             forecast_hour=canonical,

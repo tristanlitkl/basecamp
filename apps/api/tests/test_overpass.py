@@ -64,6 +64,55 @@ def test_overpass_posts_identifying_header_and_parses_node_way_and_relation(
     assert [place["name"] for place in result] == ["Cafe", "Park"]
 
 
+def test_overpass_connection_failure_uses_the_configured_secondary_instance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempted: list[str] = []
+
+    class Response:
+        def raise_for_status(self) -> None:
+            pass
+
+        def json(self):
+            return {"elements": [{"lat": 39.09, "lon": -120.05, "tags": {"name": "Tahoe Cafe"}}]}
+
+    class Client:
+        def __init__(self, **kwargs):
+            assert kwargs["trust_env"] is False
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, url, **_kwargs):
+            attempted.append(url)
+            if url == "https://primary.example/interpreter":
+                raise httpx.ConnectError("connection refused")
+            return Response()
+
+    monkeypatch.setattr(
+        overpass,
+        "OVERPASS_ENDPOINTS",
+        (
+            "https://primary.example/interpreter",
+            "https://secondary.example/interpreter",
+        ),
+    )
+    monkeypatch.setattr(overpass.httpx, "AsyncClient", Client)
+
+    result = asyncio.run(
+        overpass.discover_nearby((39.05854, -120.080353, 39.11854, -120.020353), "cafe")
+    )
+
+    assert attempted == [
+        "https://primary.example/interpreter",
+        "https://secondary.example/interpreter",
+    ]
+    assert result[0]["name"] == "Tahoe Cafe"
+
+
 def test_overpass_malformed_payload_and_timeout_propagate_for_safe_service_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

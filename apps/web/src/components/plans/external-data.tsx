@@ -19,11 +19,12 @@ function requestErrorMessage(error: unknown) {
   return messages[error.status] ?? `Request failed (HTTP ${error.status}). Your current entries were kept.`;
 }
 
-function providerErrorMessage(category: ExternalErrorCategory) {
-  if (category === "rate_limit") return "Rate limit — the provider is busy. Wait a moment and try again.";
-  if (category === "timeout") return "Provider timeout — the provider took too long to respond. Try again shortly.";
+function providerErrorMessage(kind: "place" | "route" | "weather", category: ExternalErrorCategory, stale = false) {
+  const provider = kind === "place" ? "Nearby-place" : kind === "weather" ? "Weather" : "Route";
+  if (category === "rate_limit") return stale ? `${provider} provider is rate limited — showing cached result.` : `${provider} provider is rate limited — try again later.`;
+  if (category === "timeout") return stale ? `${provider} provider timed out — showing cached result.` : `${provider} provider timed out — try again shortly.`;
   if (category === "malformed_response") return "Malformed response — the provider returned invalid data. Your current entries were kept.";
-  return "Provider unavailable — try again later. Your current entries were kept.";
+  return `${provider} provider is unavailable — try again later.`;
 }
 
 function ExternalRequestError({ error }: { error: unknown | null }) {
@@ -31,7 +32,8 @@ function ExternalRequestError({ error }: { error: unknown | null }) {
 }
 
 export function ExternalStatusMessage({ kind, status, errorCategory }: { kind: "place" | "route" | "weather"; status: ExternalStatus; errorCategory?: ExternalErrorCategory | null }) {
-  if (status === "unavailable" && errorCategory) return <p className="muted small" role="status">{providerErrorMessage(errorCategory)}</p>;
+  if (status === "unavailable" && errorCategory) return <p className="muted small" role="status">{providerErrorMessage(kind, errorCategory)}</p>;
+  if (status === "stale" && errorCategory) return <p className="muted small" role="status">{providerErrorMessage(kind, errorCategory, true)}</p>;
   if (kind === "place") {
     if (status === "ok") return <p className="muted small" role="status">Live place results ready.</p>;
     if (status === "unavailable") return <p className="muted small" role="status">Place search unavailable — you can still add a place manually.</p>;

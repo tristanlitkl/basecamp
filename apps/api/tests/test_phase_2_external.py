@@ -19,6 +19,7 @@ from app.services.external_api_service import (
     canonical_coordinate,
     coordinate_text,
     get_weather,
+    legacy_weather_key,
     nearby_places_key,
     place_search_key,
     reset_external_service_state,
@@ -38,6 +39,13 @@ def test_phase2_normalized_cache_keys_are_deterministic() -> None:
     assert route_key((1.0, 2.0), (3.0, 4.0)) == route_key((1.0, 2.0), (3.0, 4.0))
     assert weather_key(1.23449, 2.34551, "2026-01-01T12:45:00+00:00") == weather_key(
         1.23449, 2.34551, "2026-01-01T12:00:00Z"
+    )
+    assert weather_key(1.23449, 2.34551, "2026-01-01T23:00:00Z") == weather_key(
+        1.23449, 2.34551, "2026-01-02T00:00:00Z"
+    )
+    lake_tahoe_key = weather_key(39.0885405, -120.0503528, "2026-08-09T00:00:00Z")
+    assert lake_tahoe_key == weather_key(
+        Decimal("39.088540"), Decimal("-120.050353"), "2026-08-09T23:00:00Z"
     )
     latitude_values = (37.3349, 37.334900, Decimal("37.3349"), Decimal("37.334900"))
     longitude_values = (-122.009, Decimal("-122.009000"))
@@ -66,7 +74,11 @@ def test_phase2_normalized_cache_keys_are_deterministic() -> None:
 def test_phase2_equivalent_decimal_weather_coordinates_share_one_postgres_cache_row(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    calls = 0
+
     async def fake_weather(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
         return {
             "temperature_celsius": 20.0,
             "weather_code": 1,
@@ -85,10 +97,13 @@ def test_phase2_equivalent_decimal_weather_coordinates_share_one_postgres_cache_
     monkeypatch.setattr("app.services.external_api_service.open_meteo.get_weather", fake_weather)
     forecast = "2031-01-01T12:00:00Z"
     key = weather_key(Decimal("37.334900"), Decimal("-122.009000"), forecast)
+    old_key = legacy_weather_key(Decimal("37.334900"), Decimal("-122.009000"), forecast)
 
     async def exercise() -> tuple[str, str, int, Decimal, Decimal]:
         async with AsyncSessionLocal() as first:
-            await first.execute(delete(WeatherSnapshot).where(WeatherSnapshot.cache_key == key))
+            await first.execute(
+                delete(WeatherSnapshot).where(WeatherSnapshot.cache_key.in_((key, old_key)))
+            )
             await first.commit()
             first_response = await get_weather(
                 first, Decimal("37.3349"), Decimal("-122.009"), forecast
@@ -116,6 +131,7 @@ def test_phase2_equivalent_decimal_weather_coordinates_share_one_postgres_cache_
     assert count == 1
     assert latitude == Decimal("37.334900")
     assert longitude == Decimal("-122.009000")
+    assert calls == 1
 
 
 def test_phase2_weather_responses_expose_readable_conditions_and_canonical_forecast_time(
@@ -388,6 +404,116 @@ def test_phase2_weather_stale_cache_beats_neutral_fallback(monkeypatch: pytest.M
     assert response.status_code == 200
     assert response.json()["status"] == "stale"
     assert response.json()["weather_score"] == 0.8
+
+
+def test_phase2_weather_429_uses_stale_cache_and_preserves_rate_limit_category(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = httpx.Request("GET", "https://api.open-meteo.com/v1/forecast")
+    response = httpx.Response(429, headers={"Retry-After": "60"}, request=request)
+    calls = 0
+
+    async def rate_limited_weather(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise httpx.HTTPStatusError("rate limited", request=request, response=response)
+
+    monkeypatch.setattr(
+        "app.services.external_api_service.open_meteo.get_weather", rate_limited_weather
+    )
+    forecast = "2026-08-09T00:00:00Z"
+    key = weather_key(39.0885405, -120.0503528, forecast)
+
+    async def seed() -> None:
+        async with AsyncSessionLocal() as session:
+            await session.execute(delete(WeatherSnapshot).where(WeatherSnapshot.cache_key == key))
+            session.add(
+                WeatherSnapshot(
+                    cache_key=key,
+                    latitude=39.088541,
+                    longitude=-120.050353,
+                    forecast_hour=forecast,
+                    source="open-meteo",
+                    status="ok",
+                    temperature_celsius=13.0,
+                    weather_code=1,
+                    daily_forecast=[
+                        {
+                            "date": f"2026-08-{day:02d}",
+                            "weather_code": 1,
+                            "temperature_max_celsius": 20.0,
+                            "temperature_min_celsius": 9.0,
+                        }
+                        for day in range(9, 16)
+                    ],
+                    timezone="America/Los_Angeles",
+                    weather_score=0.8,
+                    expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+                )
+            )
+            await session.commit()
+
+    with client_context() as client:
+        client.portal.call(seed)
+        jwt, plan_id = create_plan(client, f"owner-{uuid4()}")
+        result = client.get(
+            f"/plans/{plan_id}/weather?latitude=39.0885405&longitude=-120.0503528&forecast_hour={forecast.replace(':', '%3A')}",
+            headers=bearer(jwt),
+        )
+
+    assert result.status_code == 200
+    assert result.json()["status"] == "stale"
+    assert result.json()["error_category"] == "rate_limit"
+    assert len(result.json()["daily_forecast"]) == 7
+    assert calls == 1
+
+
+def test_phase2_weather_429_without_cache_is_explicit_safe_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = httpx.Request("GET", "https://api.open-meteo.com/v1/forecast")
+    response = httpx.Response(429, headers={"Retry-After": "60"}, request=request)
+    calls = 0
+
+    async def rate_limited_weather(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise httpx.HTTPStatusError("rate limited", request=request, response=response)
+
+    monkeypatch.setattr(
+        "app.services.external_api_service.open_meteo.get_weather", rate_limited_weather
+    )
+    forecast = "2035-01-01T00:00:00Z"
+    key = weather_key(39.0885405, -120.0503528, forecast)
+
+    async def clear() -> None:
+        async with AsyncSessionLocal() as session:
+            await session.execute(delete(WeatherSnapshot).where(WeatherSnapshot.cache_key == key))
+            await session.commit()
+
+    async def missing() -> bool:
+        async with AsyncSessionLocal() as session:
+            return (
+                await session.execute(
+                    select(WeatherSnapshot).where(WeatherSnapshot.cache_key == key)
+                )
+            ).scalar_one_or_none() is None
+
+    with client_context() as client:
+        client.portal.call(clear)
+        jwt, plan_id = create_plan(client, f"owner-{uuid4()}")
+        result = client.get(
+            f"/plans/{plan_id}/weather?latitude=39.0885405&longitude=-120.0503528&forecast_hour={forecast.replace(':', '%3A')}",
+            headers=bearer(jwt),
+        )
+        cache_is_missing = client.portal.call(missing)
+
+    assert result.status_code == 200
+    assert result.json()["status"] == "unavailable"
+    assert result.json()["error_category"] == "rate_limit"
+    assert result.json()["daily_forecast"] == []
+    assert calls == 1
+    assert cache_is_missing is True
 
 
 def test_phase2_weather_failure_without_cache_is_neutral(monkeypatch: pytest.MonkeyPatch) -> None:

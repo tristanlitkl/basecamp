@@ -33,6 +33,18 @@ describe("Phase 2 external-data UI", () => {
     expect(screen.getByText("Using cached weather.")).toBeTruthy();
   });
 
+  it("renders HTTP-200 provider fallback envelopes without calling them network failures", () => {
+    const { rerender } = render(<ExternalStatusMessage kind="weather" status="unavailable" errorCategory="rate_limit" />);
+    expect(screen.getByText("Weather provider is rate limited — try again later.")).toBeTruthy();
+    rerender(<ExternalStatusMessage kind="place" status="unavailable" errorCategory="provider_unavailable" />);
+    expect(screen.getByText("Nearby-place provider is unavailable — try again later.")).toBeTruthy();
+    rerender(<ExternalStatusMessage kind="weather" status="unavailable" errorCategory="timeout" />);
+    expect(screen.getByText("Weather provider timed out — try again shortly.")).toBeTruthy();
+    rerender(<ExternalStatusMessage kind="weather" status="stale" errorCategory="rate_limit" />);
+    expect(screen.getByText("Weather provider is rate limited — showing cached result.")).toBeTruthy();
+    expect(screen.queryByText(/Network request failed/i)).toBeNull();
+  });
+
   it("uses an explicit action rather than searching on every address keystroke", async () => {
     let resolve!: (value: { status: "ok"; results: Array<{ name: string; latitude: number; longitude: number; address: string; type: string }> }) => void;
     vi.mocked(searchPlaces).mockReturnValue(new Promise((done) => { resolve = done; }));

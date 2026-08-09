@@ -1,14 +1,27 @@
 """Small, timeout-bounded Overpass provider client."""
 
 import os
+import logging
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
+
+
+logger = logging.getLogger(__name__)
 
 
 OVERPASS_USER_AGENT = os.getenv(
     "OVERPASS_USER_AGENT",
     "Basecamp/1.0 (student portfolio project; contact: triskieranli@gmail.com)",
+)
+OVERPASS_ENDPOINTS = tuple(
+    endpoint.strip().rstrip("/")
+    for endpoint in os.getenv(
+        "OVERPASS_ENDPOINTS",
+        "https://overpass-api.de/api/interpreter,https://overpass.private.coffee/api/interpreter",
+    ).split(",")
+    if endpoint.strip()
 )
 
 # Product categories deliberately map to the OpenStreetMap tagging vocabulary.
@@ -45,16 +58,39 @@ async def discover_nearby(
 ) -> list[dict[str, Any]]:
     query = build_nearby_query(bbox, place_type)
     timeout = httpx.Timeout(timeout_seconds, connect=min(3.0, timeout_seconds))
-    async with httpx.AsyncClient(
-        timeout=timeout, headers={"User-Agent": OVERPASS_USER_AGENT}
-    ) as client:
-        response = await client.post(
-            "https://overpass-api.de/api/interpreter",
-            # The interpreter expects the QL program in its ``data`` form field.
-            data={"data": query},
-        )
-        response.raise_for_status()
-        data = response.json()
+    for index, endpoint in enumerate(OVERPASS_ENDPOINTS):
+        hostname = urlparse(endpoint).hostname or "invalid-endpoint"
+        try:
+            # Render has direct egress. Ignore ambient proxy variables so an
+            # unavailable proxy cannot turn a direct provider request into a
+            # ConnectError before the endpoint is contacted.
+            async with httpx.AsyncClient(
+                timeout=timeout,
+                headers={"User-Agent": OVERPASS_USER_AGENT},
+                trust_env=False,
+            ) as client:
+                response = await client.post(
+                    endpoint,
+                    # The interpreter expects the QL program in its ``data`` form field.
+                    data={"data": query},
+                )
+                response.raise_for_status()
+                data = response.json()
+            break
+        except (httpx.ConnectError, httpx.ProxyError, httpx.NetworkError) as error:
+            logger.warning(
+                "overpass_endpoint_attempt_failed endpoint_host=%s attempt=%s error_type=%s",
+                hostname,
+                index + 1,
+                type(error).__name__,
+            )
+            # Fail over only before an HTTP response exists; 429 and malformed
+            # response handling remain explicit service-level fallback states.
+            if index + 1 < len(OVERPASS_ENDPOINTS):
+                continue
+            raise
+    else:
+        raise RuntimeError("no_overpass_endpoints_configured")
     elements = data.get("elements") if isinstance(data, dict) else None
     if not isinstance(elements, list):
         raise ValueError("malformed_overpass_response")
