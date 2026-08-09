@@ -76,9 +76,13 @@ accesses. Cleanup failure is intentionally isolated from the response path.
   `approximate: true`.
 - `GET /plans/{plan_id}/weather?latitude=&longitude=&forecast_hour=` returns
   `{status, temperature_celsius, weather_code, weather_condition, forecast_hour,
-  weather_score}`. `weather_condition` is a readable WMO-code label and
-  `forecast_hour` is the canonical UTC hour actually used for the forecast. An
-  unavailable response uses the neutral `weather_score` of `0.5`.
+  daily_forecast, timezone, weather_score}`. `weather_condition` is a readable
+  WMO-code label and `forecast_hour` is the canonical UTC hour actually used
+  for the snapshot. `daily_forecast` contains up to seven ordered
+  location-local `{date, weather_code, weather_condition,
+  temperature_max_celsius, temperature_min_celsius}` entries from Open-Meteo.
+  An unavailable response has an empty daily forecast and uses the neutral
+  `weather_score` of `0.5`.
 
 ## Phase 1B Balances
 

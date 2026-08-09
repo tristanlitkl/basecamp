@@ -67,7 +67,20 @@ def test_phase2_equivalent_decimal_weather_coordinates_share_one_postgres_cache_
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def fake_weather(*_args, **_kwargs):
-        return {"temperature_celsius": 20.0, "weather_code": 1}
+        return {
+            "temperature_celsius": 20.0,
+            "weather_code": 1,
+            "daily_forecast": [
+                {
+                    "date": f"2031-01-{day:02d}",
+                    "weather_code": 1,
+                    "temperature_max_celsius": 22.0,
+                    "temperature_min_celsius": 11.0,
+                }
+                for day in range(1, 8)
+            ],
+            "timezone": "UTC",
+        }
 
     monkeypatch.setattr("app.services.external_api_service.open_meteo.get_weather", fake_weather)
     forecast = "2031-01-01T12:00:00Z"
@@ -109,7 +122,20 @@ def test_phase2_weather_responses_expose_readable_conditions_and_canonical_forec
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def fake_weather(*_args, **_kwargs):
-        return {"temperature_celsius": 20.0, "weather_code": 3}
+        return {
+            "temperature_celsius": 20.0,
+            "weather_code": 3,
+            "daily_forecast": [
+                {
+                    "date": f"2031-01-{day:02d}",
+                    "weather_code": 3,
+                    "temperature_max_celsius": 22.0,
+                    "temperature_min_celsius": 11.0,
+                }
+                for day in range(1, 8)
+            ],
+            "timezone": "UTC",
+        }
 
     monkeypatch.setattr("app.services.external_api_service.open_meteo.get_weather", fake_weather)
     forecast = "2031-01-01T12:45:00Z"
@@ -127,6 +153,17 @@ def test_phase2_weather_responses_expose_readable_conditions_and_canonical_forec
         "weather_code": 3,
         "weather_condition": "Overcast",
         "forecast_hour": "2031-01-01T12:00:00+00:00",
+        "daily_forecast": [
+            {
+                "date": f"2031-01-{day:02d}",
+                "weather_code": 3,
+                "weather_condition": "Overcast",
+                "temperature_max_celsius": 22.0,
+                "temperature_min_celsius": 11.0,
+            }
+            for day in range(1, 8)
+        ],
+        "timezone": "UTC",
         "weather_score": 0.8,
         "error_category": None,
     }
@@ -326,6 +363,15 @@ def test_phase2_weather_stale_cache_beats_neutral_fallback(monkeypatch: pytest.M
                     status="ok",
                     temperature_celsius=18.0,
                     weather_code=1,
+                    daily_forecast=[
+                        {
+                            "date": "2026-02-01",
+                            "weather_code": 1,
+                            "temperature_max_celsius": 20.0,
+                            "temperature_min_celsius": 10.0,
+                        }
+                    ],
+                    timezone="UTC",
                     weather_score=0.8,
                     expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
                 )
@@ -362,12 +408,37 @@ def test_phase2_weather_failure_without_cache_is_neutral(monkeypatch: pytest.Mon
         "weather_code": None,
         "weather_condition": None,
         "forecast_hour": "2030-01-01T00:00:00+00:00",
+        "daily_forecast": [],
+        "timezone": None,
         "weather_score": 0.5,
-        "error_category": "provider_unavailable",
+        "error_category": "timeout",
     }
 
 
-def test_phase2_overpass_failure_is_typed_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_phase2_malformed_weather_provider_response_is_safe_and_non_blocking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def malformed_weather(*_args, **_kwargs):
+        raise ValueError("malformed_open_meteo_response")
+
+    monkeypatch.setattr(
+        "app.services.external_api_service.open_meteo.get_weather", malformed_weather
+    )
+    with client_context() as client:
+        jwt, plan_id = create_plan(client, f"owner-{uuid4()}")
+        response = client.get(
+            f"/plans/{plan_id}/weather?latitude=12&longitude=13&forecast_hour=2032-01-01T00%3A00%3A00Z",
+            headers=bearer(jwt),
+        )
+    assert response.status_code == 200
+    assert response.json()["status"] == "unavailable"
+    assert response.json()["error_category"] == "malformed_response"
+    assert response.json()["daily_forecast"] == []
+
+
+def test_phase2_overpass_timeout_is_typed_and_lake_tahoe_categories_remain_usable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def fail_overpass(*_args, **_kwargs):
         raise httpx.TimeoutException("timeout")
 
@@ -382,7 +453,56 @@ def test_phase2_overpass_failure_is_typed_unavailable(monkeypatch: pytest.Monkey
     assert response.json() == {
         "status": "unavailable",
         "results": [],
-        "error_category": "provider_unavailable",
+        "error_category": "timeout",
+    }
+
+
+def test_phase2_lake_tahoe_nearby_cafe_returns_selectable_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lake_tahoe = (38.9175, -120.0040, 38.9775, -119.9440)
+    key = nearby_places_key(lake_tahoe, "cafe")
+
+    async def nearby(bbox, place_type):
+        assert bbox == lake_tahoe
+        assert place_type == "cafe"
+        return [
+            {
+                "name": "Tahoe Cafe",
+                "latitude": 38.945,
+                "longitude": -119.97,
+                "address": "Lake Tahoe",
+                "type": "cafe",
+            }
+        ]
+
+    monkeypatch.setattr("app.services.external_api_service.overpass.discover_nearby", nearby)
+
+    async def clear_cache() -> None:
+        async with AsyncSessionLocal() as session:
+            await session.execute(delete(PlaceCache).where(PlaceCache.cache_key == key))
+            await session.commit()
+
+    with client_context() as client:
+        client.portal.call(clear_cache)
+        jwt, plan_id = create_plan(client, f"owner-{uuid4()}")
+        response = client.get(
+            f"/plans/{plan_id}/nearby-places?south={lake_tahoe[0]}&west={lake_tahoe[1]}&north={lake_tahoe[2]}&east={lake_tahoe[3]}&place_type=cafe",
+            headers=bearer(jwt),
+        )
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "results": [
+            {
+                "name": "Tahoe Cafe",
+                "latitude": 38.945,
+                "longitude": -119.97,
+                "address": "Lake Tahoe",
+                "type": "cafe",
+            }
+        ],
+        "error_category": None,
     }
 
 

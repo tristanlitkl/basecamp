@@ -109,7 +109,7 @@ describe("API app JWT refresh", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok", results: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok", results: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok", distance_meters: 1, duration_minutes: 1, approximate: false }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok", temperature_celsius: 20, weather_code: 1, weather_condition: "Mainly clear", forecast_hour: "2031-01-01T12:00:00Z", weather_score: 0.8 }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok", temperature_celsius: 20, weather_code: 1, weather_condition: "Mainly clear", forecast_hour: "2031-01-01T12:00:00Z", daily_forecast: Array.from({ length: 7 }, (_, index) => ({ date: `2031-01-0${index + 1}`, weather_code: 1, weather_condition: "Mainly clear", temperature_max_celsius: 20, temperature_min_celsius: 10 })), timezone: "UTC", weather_score: 0.8 }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     await searchPlaces("token", "plan-1", "Golden Gate Park");
     await discoverNearbyPlaces("token", "plan-1", { south: 37.7, west: -122.5, north: 37.8, east: -122.4, placeType: "cafe" });

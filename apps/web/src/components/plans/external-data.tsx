@@ -21,6 +21,7 @@ function requestErrorMessage(error: unknown) {
 
 function providerErrorMessage(category: ExternalErrorCategory) {
   if (category === "rate_limit") return "Rate limit — the provider is busy. Wait a moment and try again.";
+  if (category === "timeout") return "Provider timeout — the provider took too long to respond. Try again shortly.";
   if (category === "malformed_response") return "Malformed response — the provider returned invalid data. Your current entries were kept.";
   return "Provider unavailable — try again later. Your current entries were kept.";
 }
@@ -158,7 +159,7 @@ export function PlanIntegrations({
       <div className="subcard stack"><h3>Destination</h3><PlaceSearch token={token} planId={planId} disabled={disabled} label="Search and select destination" actionLabel="Search destinations" useLabel="Use destination" onSelect={useDestination} />{destination && <p className="muted small">Selected destination: {destination.name}</p>}</div>
       <div className="subcard stack"><h3>Nearby places</h3><p className="muted small">{destination ? `Find places near ${destination.name}.` : "Select a destination or center point first."}</p><label className="field">Place type <input aria-label="Nearby place type" value={placeType} disabled={disabled || nearbyLoading} onChange={(event) => setPlaceType(event.target.value)} /></label><button className="btn btn-secondary" type="button" aria-describedby={!destination ? "nearby-prerequisite" : undefined} disabled={disabled || nearbyLoading || !destination || !placeType.trim()} onClick={() => void findNearby()}>{nearbyLoading ? "Finding nearby places…" : "Find nearby"}</button>{!destination && <p className="muted small" id="nearby-prerequisite">A selected destination or center point is required.</p>}{nearby && <ExternalStatusMessage kind="place" status={nearby.status} errorCategory={nearby.error_category} />}<ExternalRequestError error={nearbyError} /><PlaceResults results={nearby?.results ?? []} onSelect={useDestination} useLabel="Use nearby place" /></div>
       <div className="subcard stack"><h3>Route estimate</h3><PlaceSearch token={token} planId={planId} disabled={disabled} label="Search and select origin" actionLabel="Search origins" useLabel="Use origin" onSelect={(place) => { setOrigin(place); setRoute(null); }} />{origin && <p className="muted small">From: {origin.name}</p>}{destination && <p className="muted small">To: {destination.name}</p>}<button className="btn btn-secondary" type="button" aria-describedby={(!origin || !destination) ? "route-prerequisite" : undefined} disabled={disabled || routeLoading || !origin || !destination} onClick={() => void estimateRoute()}>{routeLoading ? "Estimating route…" : "Estimate route"}</button>{(!origin || !destination) && <p className="muted small" id="route-prerequisite">Select both an origin and destination with coordinates to estimate a route.</p>}<ExternalRequestError error={routeError} /><RouteEstimateNotice estimate={route} /></div>
-      <div className="subcard stack"><h3>Weather</h3><p className="muted small">{destination ? `Forecast for ${destination.name}.` : "Select a destination to check weather."}</p><button className="btn btn-secondary" type="button" disabled={disabled || weatherLoading || !destination} onClick={() => void lookupWeather()}>{weatherLoading ? "Checking weather…" : "Check weather"}</button><ExternalRequestError error={weatherError} /><WeatherNotice weather={weather} /></div>
+      <div className="subcard stack"><h3>Weather</h3><p className="muted small">{destination ? `Forecast for ${destination.name}.` : "Select a destination to check weather."}</p><button className="btn btn-secondary" type="button" disabled={disabled || weatherLoading || !destination} onClick={() => void lookupWeather()}>{weatherLoading ? "Checking weather…" : "Check weather"}</button><ExternalRequestError error={weatherError} /><WeatherNotice weather={weather} destinationName={destination?.name} /></div>
     </div>
     {destination && <div className="notice external-selected-place"><strong>{destination.name}</strong><span> is ready to use in the activity form.</span></div>}
   </section>;
@@ -166,13 +167,33 @@ export function PlanIntegrations({
 
 export function RouteEstimateNotice({ estimate }: { estimate: RouteEstimate | null }) {
   if (!estimate) return null;
-  return <div><ExternalStatusMessage kind="route" status={estimate.status} errorCategory={estimate.error_category} /><p className="muted small">{(estimate.distance_meters / 1609.344).toFixed(1)} mi · {estimate.duration_minutes} min{estimate.approximate ? " (approximate)" : ""}</p></div>;
+  return <div><ExternalStatusMessage kind="route" status={estimate.status} errorCategory={estimate.error_category} /><p className="muted small">{formatRouteEstimate(estimate)}</p></div>;
 }
 
-export function WeatherNotice({ weather }: { weather: WeatherResponse | null }) {
+export function formatRouteDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} hr${minutes % 60 ? ` ${minutes % 60} min` : ""}`;
+}
+
+export function formatRouteEstimate(estimate: RouteEstimate): string {
+  return `${estimate.approximate ? "Approximate · " : ""}Car · ${(estimate.distance_meters / 1609.344).toFixed(1)} mi · ${formatRouteDuration(estimate.duration_minutes)}`;
+}
+
+function weatherIcon(code: number): string {
+  if (code <= 1) return "☀";
+  if (code <= 3) return "☁";
+  if (code <= 48) return "〰";
+  if (code <= 67 || (code >= 80 && code <= 82)) return "☂";
+  if (code <= 86) return "❄";
+  return "ϟ";
+}
+
+function forecastDate(date: string): string {
+  return new Intl.DateTimeFormat("en", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`));
+}
+
+export function WeatherNotice({ weather, destinationName }: { weather: WeatherResponse | null; destinationName?: string }) {
   if (!weather) return null;
-  const forecastTime = new Intl.DateTimeFormat("en", {
-    dateStyle: "medium", timeStyle: "short", timeZone: "UTC"
-  }).format(new Date(weather.forecast_hour));
-  return <div><ExternalStatusMessage kind="weather" status={weather.status} errorCategory={weather.error_category} />{weather.temperature_celsius !== null && <p className="muted small">Weather: {weather.temperature_celsius.toFixed(1)}°C{weather.weather_condition ? ` · ${weather.weather_condition}` : ""}</p>}<p className="muted small">Forecast time: {forecastTime} UTC.</p></div>;
+  const label = weather.status === "ok" ? "Live" : weather.status === "cached" ? "Cached" : weather.status === "stale" ? "Stale" : "Unavailable";
+  return <div className="weather-forecast"><div className="split weather-forecast-heading"><div>{destinationName && <strong>{destinationName}</strong>}{weather.temperature_celsius !== null && <p className="muted small">Now {weather.temperature_celsius.toFixed(1)}°C{weather.weather_condition ? ` · ${weather.weather_condition}` : ""}</p>}</div><span className={`badge weather-status-${weather.status}`}>{label}</span></div><ExternalStatusMessage kind="weather" status={weather.status} errorCategory={weather.error_category} />{weather.daily_forecast.length > 0 ? <div className="forecast-strip" aria-label="Seven-day forecast">{weather.daily_forecast.map((day) => <article className="forecast-day" key={day.date}><span className="forecast-icon" aria-hidden="true">{weatherIcon(day.weather_code)}</span><strong>{forecastDate(day.date)}</strong><span className="small">{day.weather_condition}</span><span className="small"><b>{day.temperature_max_celsius.toFixed(0)}°</b> / {day.temperature_min_celsius.toFixed(0)}°</span></article>)}</div> : weather.status !== "unavailable" ? <p className="muted small">Daily forecast details are unavailable in this cached snapshot.</p> : null}</div>;
 }

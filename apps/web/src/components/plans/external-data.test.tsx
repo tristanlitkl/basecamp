@@ -2,7 +2,7 @@ import React from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ExternalStatusMessage, PlanIntegrations, PlaceSearch, RouteEstimateNotice, WeatherNotice } from "@/components/plans/external-data";
+import { ExternalStatusMessage, formatRouteDuration, formatRouteEstimate, PlanIntegrations, PlaceSearch, RouteEstimateNotice, WeatherNotice } from "@/components/plans/external-data";
 import { ApiError, MalformedResponseError, discoverNearbyPlaces, getRouteEstimate, getWeather, searchPlaces } from "@/lib/api-client";
 
 vi.mock("@/lib/api-client", async (importOriginal) => {
@@ -25,9 +25,12 @@ describe("Phase 2 external-data UI", () => {
     expect(screen.getByText(/Using cached place results while live search is unavailable/)).toBeTruthy();
     rerender(<RouteEstimateNotice estimate={{ status: "unavailable", distance_meters: 1609, duration_minutes: 3, approximate: true }} />);
     expect(screen.getAllByText(/approximate/i)).toHaveLength(2);
-    rerender(<WeatherNotice weather={{ status: "unavailable", temperature_celsius: null, weather_code: null, weather_condition: null, forecast_hour: "2031-01-01T12:00:00Z", weather_score: 0.5 }} />);
+    rerender(<WeatherNotice weather={{ status: "unavailable", temperature_celsius: null, weather_code: null, weather_condition: null, forecast_hour: "2031-01-01T12:00:00Z", daily_forecast: [], timezone: null, weather_score: 0.5 }} />);
     expect(screen.getByText(/Weather unavailable/)).toBeTruthy();
-    expect(screen.getByText(/Forecast time: Jan 1, 2031, 12:00 PM UTC/)).toBeTruthy();
+    expect(screen.getByText("Unavailable")).toBeTruthy();
+    rerender(<WeatherNotice weather={{ status: "stale", temperature_celsius: 8, weather_code: 3, weather_condition: "Overcast", forecast_hour: "2031-01-01T12:00:00Z", daily_forecast: [], timezone: "UTC", weather_score: 0.5 }} />);
+    expect(screen.getByText("Stale")).toBeTruthy();
+    expect(screen.getByText("Using cached weather.")).toBeTruthy();
   });
 
   it("uses an explicit action rather than searching on every address keystroke", async () => {
@@ -84,7 +87,7 @@ describe("Phase 2 external-data UI", () => {
     vi.mocked(searchPlaces).mockResolvedValue({ status: "cached", results: [{ name: "Cafe", latitude: 1, longitude: 2, address: "1 Main", type: "cafe" }] });
     vi.mocked(discoverNearbyPlaces).mockResolvedValue({ status: "stale", results: [{ name: "Museum", latitude: 1.01, longitude: 2.01, address: "2 Main", type: "museum" }] });
     vi.mocked(getRouteEstimate).mockResolvedValue({ status: "unavailable", distance_meters: 1609, duration_minutes: 3, approximate: true });
-    vi.mocked(getWeather).mockResolvedValue({ status: "cached", temperature_celsius: 20, weather_code: 1, weather_condition: "Mainly clear", forecast_hour: "2031-01-01T12:00:00Z", weather_score: 0.8 });
+    vi.mocked(getWeather).mockResolvedValue({ status: "cached", temperature_celsius: 20, weather_code: 1, weather_condition: "Mainly clear", forecast_hour: "2031-01-01T12:00:00Z", daily_forecast: [{ date: "2031-01-01", weather_code: 1, weather_condition: "Mainly clear", temperature_max_celsius: 21, temperature_min_celsius: 9 }], timezone: "UTC", weather_score: 0.8 });
     render(<PlanIntegrations token="jwt" planId="plan" onUsePlace={usePlace} />);
 
     expect(discoverNearbyPlaces).not.toHaveBeenCalled();
@@ -109,5 +112,24 @@ describe("Phase 2 external-data UI", () => {
     await waitFor(() => expect(getWeather).toHaveBeenCalledWith("jwt", "plan", 1, 2));
     expect(await screen.findByText("Using cached weather.")).toBeTruthy();
     expect(screen.getByText(/20.0°C · Mainly clear/)).toBeTruthy();
+  });
+
+  it("renders a compact seven-day forecast with readable high and low values", () => {
+    const daily = Array.from({ length: 7 }, (_, index) => ({ date: `2031-01-0${index + 1}`, weather_code: index === 0 ? 0 : 61, weather_condition: index === 0 ? "Clear sky" : "Slight rain", temperature_max_celsius: 20 + index, temperature_min_celsius: 8 + index }));
+    render(<WeatherNotice destinationName="Lake Tahoe" weather={{ status: "ok", temperature_celsius: 9.7, weather_code: 0, weather_condition: "Clear sky", forecast_hour: "2031-01-01T12:00:00Z", daily_forecast: daily, timezone: "UTC", weather_score: 0.8 }} />);
+    expect(screen.getByText("Lake Tahoe")).toBeTruthy();
+    expect(screen.getByLabelText("Seven-day forecast").children).toHaveLength(7);
+    expect(screen.getByText("Clear sky")).toBeTruthy();
+    expect(screen.getByText((_, element) => element?.textContent === "20° / 8°")).toBeTruthy();
+    expect(screen.getByText("Live")).toBeTruthy();
+  });
+
+  it.each([[45, "45 min"], [60, "1 hr"], [65, "1 hr 5 min"], [256, "4 hr 16 min"]])("formats %i route minutes as %s", (minutes, expected) => {
+    expect(formatRouteDuration(minutes)).toBe(expected);
+  });
+
+  it("labels live and approximate driving routes without implying fallback precision", () => {
+    expect(formatRouteEstimate({ status: "ok", distance_meters: 1609.344, duration_minutes: 60, approximate: false })).toBe("Car · 1.0 mi · 1 hr");
+    expect(formatRouteEstimate({ status: "unavailable", distance_meters: 332_493, duration_minutes: 256, approximate: true })).toBe("Approximate · Car · 206.6 mi · 4 hr 16 min");
   });
 });

@@ -73,7 +73,17 @@ function parseWeather(value: unknown): WeatherResponse {
     (value.weather_condition !== null && typeof value.weather_condition !== "string") ||
     typeof value.forecast_hour !== "string" || Number.isNaN(Date.parse(value.forecast_hour)) ||
     typeof value.weather_score !== "number" || !Number.isFinite(value.weather_score)) throw new MalformedResponseError();
-  return value as WeatherResponse;
+  const daily = value.daily_forecast ?? [];
+  if (!Array.isArray(daily) || !daily.every((day) => {
+    if (!day || typeof day !== "object") return false;
+    const item = day as Record<string, unknown>;
+    return typeof item.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(item.date) &&
+      typeof item.weather_code === "number" && Number.isInteger(item.weather_code) &&
+      typeof item.weather_condition === "string" &&
+      typeof item.temperature_max_celsius === "number" && Number.isFinite(item.temperature_max_celsius) &&
+      typeof item.temperature_min_celsius === "number" && Number.isFinite(item.temperature_min_celsius);
+  }) || (value.timezone !== undefined && value.timezone !== null && typeof value.timezone !== "string")) throw new MalformedResponseError();
+  return { ...value, daily_forecast: daily, timezone: value.timezone ?? null } as WeatherResponse;
 }
 
 export function isAuthenticationError(error: unknown): boolean {

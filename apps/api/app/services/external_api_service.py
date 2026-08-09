@@ -31,7 +31,9 @@ _nominatim_inflight: dict[str, asyncio.Future["PlaceSearchResponse"]] = {}
 _cleanup_request_count = 0
 logger = logging.getLogger(__name__)
 
-ExternalErrorCategory = Literal["rate_limit", "provider_unavailable", "malformed_response"]
+ExternalErrorCategory = Literal[
+    "rate_limit", "timeout", "provider_unavailable", "malformed_response"
+]
 
 
 class PlaceResult(BaseModel):
@@ -62,11 +64,23 @@ class WeatherResponse(BaseModel):
     weather_code: int | None = None
     weather_condition: str | None = None
     forecast_hour: str
+    daily_forecast: list["WeatherDay"] = Field(default_factory=list)
+    timezone: str | None = None
     weather_score: float
     error_category: ExternalErrorCategory | None = None
 
 
+class WeatherDay(BaseModel):
+    date: str
+    weather_code: int
+    weather_condition: str
+    temperature_max_celsius: float
+    temperature_min_celsius: float
+
+
 def _provider_error_category(error: Exception) -> ExternalErrorCategory:
+    if isinstance(error, (httpx.TimeoutException, TimeoutError)):
+        return "timeout"
     if isinstance(error, httpx.HTTPStatusError) and error.response.status_code == 429:
         return "rate_limit"
     if isinstance(error, (ValueError, TypeError, KeyError)):
@@ -77,10 +91,11 @@ def _provider_error_category(error: Exception) -> ExternalErrorCategory:
 def _log_provider_failure(provider: str, error: Exception, **context: object) -> None:
     status_code = error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None
     logger.warning(
-        "external_provider_failure provider=%s category=%s status_code=%s context=%s",
+        "external_provider_failure provider=%s category=%s status_code=%s error_type=%s context=%s",
         provider,
         _provider_error_category(error),
         status_code,
+        type(error).__name__,
         context,
     )
 
@@ -356,6 +371,19 @@ async def _weather_cache(session: AsyncSession, key: str) -> WeatherSnapshot | N
     ).scalar_one_or_none()
 
 
+def _weather_days(values: list[dict]) -> list[WeatherDay]:
+    return [
+        WeatherDay(
+            date=str(value["date"]),
+            weather_code=int(value["weather_code"]),
+            weather_condition=weather_condition(int(value["weather_code"])) or "Unknown conditions",
+            temperature_max_celsius=float(value["temperature_max_celsius"]),
+            temperature_min_celsius=float(value["temperature_min_celsius"]),
+        )
+        for value in values
+    ]
+
+
 def _weather_response(
     record: WeatherSnapshot, status: Literal["cached", "stale"]
 ) -> WeatherResponse:
@@ -365,6 +393,8 @@ def _weather_response(
         weather_code=record.weather_code,
         weather_condition=weather_condition(record.weather_code),
         forecast_hour=record.forecast_hour,
+        daily_forecast=_weather_days(record.daily_forecast or []),
+        timezone=record.timezone,
         weather_score=record.weather_score,
     )
 
@@ -435,6 +465,8 @@ async def get_weather(
                 temperature_celsius=live["temperature_celsius"],
                 weather_code=live["weather_code"],
                 weather_score=score,
+                daily_forecast=live["daily_forecast"],
+                timezone=live.get("timezone"),
                 expires_at=_now() + WEATHER_TTL,
             )
             .on_conflict_do_update(
@@ -456,6 +488,8 @@ async def get_weather(
             weather_code=live["weather_code"],
             weather_condition=weather_condition(live["weather_code"]),
             forecast_hour=canonical,
+            daily_forecast=_weather_days(live["daily_forecast"]),
+            timezone=live.get("timezone"),
             weather_score=score,
         )
     except Exception as error:
@@ -465,6 +499,7 @@ async def get_weather(
         return WeatherResponse(
             status="unavailable",
             forecast_hour=canonical,
+            daily_forecast=[],
             weather_score=0.5,
             error_category=_provider_error_category(error),
         )

@@ -71,6 +71,8 @@ class WeatherSnapshot(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ok")
     temperature_celsius: Mapped[float | None] = mapped_column(Float)
     weather_code: Mapped[int | None] = mapped_column()
+    daily_forecast: Mapped[list[dict] | None] = mapped_column(JSON)
+    timezone: Mapped[str | None] = mapped_column(String(64))
     weather_score: Mapped[float] = mapped_column(Float, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
