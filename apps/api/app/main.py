@@ -8,7 +8,6 @@ from app.api.routes import (
     auth,
     coordination,
     expenses,
-    external,
     invites,
     itinerary,
     plans,
@@ -38,7 +37,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(plans.router)
     app.include_router(invites.router)
     app.include_router(activities.router)
-    app.include_router(external.router)
     app.include_router(itinerary.router)
     app.include_router(expenses.router)
     app.include_router(coordination.router)

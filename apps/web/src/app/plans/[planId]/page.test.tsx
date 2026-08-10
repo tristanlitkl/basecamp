@@ -28,7 +28,6 @@ import {
   reorderItineraryItem,
   removeMember,
   resyncPlan,
-  searchPlaces,
   setPlanLifecycle,
   syncUser, withdrawCoOwnerRequest,
   upsertDateAvailability, voteActivity, voteDateSuggestion
@@ -51,7 +50,7 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
     createItineraryItem: vi.fn(), patchItineraryItem: vi.fn(), reorderItineraryItem: vi.fn(), deleteItineraryItem: vi.fn(),
     createExpense: vi.fn(), patchExpense: vi.fn(), deleteExpense: vi.fn(),
     patchPlan: vi.fn(), setPlanLifecycle: vi.fn(), createInvite: vi.fn(),
-    changeMemberRole: vi.fn(), removeMember: vi.fn(), createCoOwnerRequest: vi.fn(), withdrawCoOwnerRequest: vi.fn(), decideCoOwnerRequest: vi.fn(), createComment: vi.fn(), createActivitySuggestion: vi.fn(), decideActivitySuggestion: vi.fn(), upsertDateAvailability: vi.fn(), createDateSuggestion: vi.fn(), decideDateSuggestion: vi.fn(), voteDateSuggestion: vi.fn(), createPlanSuggestion: vi.fn(), decidePlanSuggestion: vi.fn(), searchPlaces: vi.fn()
+    changeMemberRole: vi.fn(), removeMember: vi.fn(), createCoOwnerRequest: vi.fn(), withdrawCoOwnerRequest: vi.fn(), decideCoOwnerRequest: vi.fn(), createComment: vi.fn(), createActivitySuggestion: vi.fn(), decideActivitySuggestion: vi.fn(), upsertDateAvailability: vi.fn(), createDateSuggestion: vi.fn(), decideDateSuggestion: vi.fn(), voteDateSuggestion: vi.fn(), createPlanSuggestion: vi.fn(), decidePlanSuggestion: vi.fn()
   };
 });
 
@@ -305,20 +304,6 @@ describe("Phase 1B.5 planning UI", () => {
     fireEvent.click(trigger);
     fireEvent.click(screen.getByRole("button", { name: "Close trip members" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Trip Members" })).toBeNull());
-  });
-
-  it("keeps Phase 2 helpers visible on plan detail and uses successful place selections to assist manual activity entry", async () => {
-    vi.mocked(searchPlaces).mockResolvedValue({ status: "ok", results: [{ name: "Gallery", latitude: 1, longitude: 2, address: "1 Main", type: "gallery" }] });
-    await renderPlan();
-    expect(screen.getByRole("heading", { name: "Explore places" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Nearby places" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Route estimate" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Weather" })).toBeTruthy();
-    fireEvent.change(screen.getByLabelText(/Search and select destination/), { target: { value: "Gallery" } });
-    fireEvent.click(screen.getByRole("button", { name: "Search destinations" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Use destination" }));
-    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Gallery");
-    expect((screen.getByLabelText(/^Address/) as HTMLInputElement).value).toBe("1 Main");
   });
 
   it("Phase 1B.75 public and anonymous votes render privacy-safe identities and totals", async () => {
@@ -711,23 +696,6 @@ describe("Phase 1B.5 planning UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "Deny" }));
     await waitFor(() => expect(decideCoOwnerRequest).toHaveBeenCalledWith("app-jwt", "plan-1", "request-1", "deny", 1, "operation-id"));
     expect(screen.queryByText("Member directory")).toBeNull();
-  });
-
-  it("keeps a manually entered activity address when place search is unavailable", async () => {
-    let resolve!: (value: { status: "unavailable"; results: [] }) => void;
-    vi.mocked(searchPlaces).mockReturnValue(new Promise((done) => { resolve = done; }));
-    await renderPlan();
-    fireEvent.click(screen.getByRole("button", { name: "+ Add activity" }));
-    const address = screen.getByLabelText(/^Address/) as HTMLInputElement;
-    fireEvent.change(address, { target: { value: "Manual cabin address" } });
-    fireEvent.change(screen.getByLabelText(/Find a place for this activity/), { target: { value: "Cabin" } });
-    fireEvent.click(screen.getByRole("button", { name: "Search activity places" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Searching…" })).toBeTruthy());
-    expect(address.disabled).toBe(false);
-    expect(address.value).toBe("Manual cabin address");
-    resolve({ status: "unavailable", results: [] });
-    await screen.findByText(/Place search unavailable/);
-    expect(address.value).toBe("Manual cabin address");
   });
 
   it("opens each dashboard editor as a closable portal dialog and removes the old Trip parameters section", async () => {

@@ -12,9 +12,6 @@ import type {
   PlanBalance,
   PlanSummary,
   ResyncSnapshot,
-  PlaceSearchResponse,
-  RouteEstimate,
-  WeatherResponse,
   User
 } from "@/types/api";
 
@@ -31,59 +28,6 @@ export class ApiError extends Error {
     super(`${status} ${JSON.stringify(body)}`);
     this.name = "ApiError";
   }
-}
-
-export class MalformedResponseError extends Error {
-  constructor() {
-    super("The server returned a malformed response.");
-    this.name = "MalformedResponseError";
-  }
-}
-
-const externalStatuses = new Set(["ok", "cached", "stale", "unavailable"]);
-const externalErrorCategories = new Set(["rate_limit", "timeout", "provider_unavailable", "malformed_response"]);
-
-function externalBase(value: unknown): value is Record<string, unknown> {
-  if (!value || typeof value !== "object") return false;
-  const item = value as Record<string, unknown>;
-  return typeof item.status === "string" && externalStatuses.has(item.status) &&
-    (item.error_category == null || (typeof item.error_category === "string" && externalErrorCategories.has(item.error_category)));
-}
-
-function parsePlaceSearch(value: unknown): PlaceSearchResponse {
-  if (!externalBase(value) || !Array.isArray(value.results) || !value.results.every((place) => {
-    if (!place || typeof place !== "object") return false;
-    const item = place as Record<string, unknown>;
-    return typeof item.name === "string" && typeof item.latitude === "number" && Number.isFinite(item.latitude) &&
-      typeof item.longitude === "number" && Number.isFinite(item.longitude) &&
-      (item.address === null || typeof item.address === "string") && (item.type === null || typeof item.type === "string");
-  })) throw new MalformedResponseError();
-  return value as PlaceSearchResponse;
-}
-
-function parseRoute(value: unknown): RouteEstimate {
-  if (!externalBase(value) || typeof value.distance_meters !== "number" || !Number.isFinite(value.distance_meters) ||
-    typeof value.duration_minutes !== "number" || !Number.isFinite(value.duration_minutes) || typeof value.approximate !== "boolean") throw new MalformedResponseError();
-  return value as RouteEstimate;
-}
-
-function parseWeather(value: unknown): WeatherResponse {
-  if (!externalBase(value) || (value.temperature_celsius !== null && typeof value.temperature_celsius !== "number") ||
-    (value.weather_code !== null && typeof value.weather_code !== "number") ||
-    (value.weather_condition !== null && typeof value.weather_condition !== "string") ||
-    typeof value.forecast_hour !== "string" || Number.isNaN(Date.parse(value.forecast_hour)) ||
-    typeof value.weather_score !== "number" || !Number.isFinite(value.weather_score)) throw new MalformedResponseError();
-  const daily = value.daily_forecast ?? [];
-  if (!Array.isArray(daily) || !daily.every((day) => {
-    if (!day || typeof day !== "object") return false;
-    const item = day as Record<string, unknown>;
-    return typeof item.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(item.date) &&
-      typeof item.weather_code === "number" && Number.isInteger(item.weather_code) &&
-      typeof item.weather_condition === "string" &&
-      typeof item.temperature_max_celsius === "number" && Number.isFinite(item.temperature_max_celsius) &&
-      typeof item.temperature_min_celsius === "number" && Number.isFinite(item.temperature_min_celsius);
-  }) || (value.timezone !== undefined && value.timezone !== null && typeof value.timezone !== "string")) throw new MalformedResponseError();
-  return { ...value, daily_forecast: daily, timezone: value.timezone ?? null } as WeatherResponse;
 }
 
 export function isAuthenticationError(error: unknown): boolean {
@@ -168,35 +112,6 @@ export function getPlan(token: string, planId: string): Promise<PlanDetail> {
 
 export function resyncPlan(token: string, planId: string): Promise<ResyncSnapshot> {
   return apiFetch<ResyncSnapshot>(token, `/plans/${planId}/resync`);
-}
-
-export async function searchPlaces(token: string, planId: string, query: string): Promise<PlaceSearchResponse> {
-  return parsePlaceSearch(await apiFetch<unknown>(token, `/plans/${planId}/place-search?query=${encodeURIComponent(query)}`));
-}
-
-export function discoverNearbyPlaces(
-  token: string,
-  planId: string,
-  input: { south: number; west: number; north: number; east: number; placeType: string }
-): Promise<PlaceSearchResponse> {
-  const query = new URLSearchParams({
-    south: String(input.south),
-    west: String(input.west),
-    north: String(input.north),
-    east: String(input.east),
-    place_type: input.placeType
-  });
-  return apiFetch<unknown>(token, `/plans/${planId}/nearby-places?${query}`).then(parsePlaceSearch);
-}
-
-export async function getRouteEstimate(token: string, planId: string, origin: { lat: number; lng: number }, destination: { lat: number; lng: number }): Promise<RouteEstimate> {
-  const query = new URLSearchParams({ origin_lat: String(origin.lat), origin_lng: String(origin.lng), destination_lat: String(destination.lat), destination_lng: String(destination.lng) });
-  return parseRoute(await apiFetch<unknown>(token, `/plans/${planId}/route-estimate?${query}`));
-}
-
-export async function getWeather(token: string, planId: string, latitude: number, longitude: number): Promise<WeatherResponse> {
-  const query = new URLSearchParams({ latitude: String(latitude), longitude: String(longitude) });
-  return parseWeather(await apiFetch<unknown>(token, `/plans/${planId}/weather?${query}`));
 }
 
 export function getPlanBalances(token: string, planId: string): Promise<PlanBalance[]> {

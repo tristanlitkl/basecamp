@@ -8,17 +8,12 @@ import {
   deleteActivityAndResync,
   deleteExpense,
   deleteItineraryItem,
-  discoverNearbyPlaces,
-  getRouteEstimate,
-  getWeather,
   getMe,
-  MalformedResponseError,
   patchActivity,
   patchExpense,
   patchItineraryItem,
   patchPlan,
   reorderItineraryItem,
-  searchPlaces,
   setPlanLifecycle
 } from "@/lib/api-client";
 
@@ -102,51 +97,6 @@ describe("API app JWT refresh", () => {
     expect(fetchMock.mock.calls[1][0]).toContain("/plans/plan-1/finalize");
     expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({ expected_version: 5 });
     expect(JSON.parse(String(fetchMock.mock.calls[2][1]?.body))).toEqual({ expected_version: 3, name: "Edited" });
-  });
-
-  it("matches every Phase 2 FastAPI query contract exactly", async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok", results: [] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok", results: [] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok", distance_meters: 1, duration_minutes: 1, approximate: false }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok", temperature_celsius: 20, weather_code: 1, weather_condition: "Mainly clear", forecast_hour: "2031-01-01T12:00:00Z", daily_forecast: Array.from({ length: 7 }, (_, index) => ({ date: `2031-01-0${index + 1}`, weather_code: 1, weather_condition: "Mainly clear", temperature_max_celsius: 20, temperature_min_celsius: 10 })), timezone: "UTC", weather_score: 0.8 }), { status: 200 }));
-    vi.stubGlobal("fetch", fetchMock);
-    await searchPlaces("token", "plan-1", "Golden Gate Park");
-    await discoverNearbyPlaces("token", "plan-1", { south: 37.7, west: -122.5, north: 37.8, east: -122.4, placeType: "cafe" });
-    await getRouteEstimate("token", "plan-1", { lat: 37.7, lng: -122.5 }, { lat: 37.8, lng: -122.4 });
-    await getWeather("token", "plan-1", 37.7, -122.5);
-    expect(fetchMock.mock.calls[0][0]).toContain("/plans/plan-1/place-search?query=Golden%20Gate%20Park");
-    expect(fetchMock.mock.calls[1][0]).toContain("south=37.7&west=-122.5&north=37.8&east=-122.4&place_type=cafe");
-    expect(fetchMock.mock.calls[2][0]).toContain("origin_lat=37.7&origin_lng=-122.5&destination_lat=37.8&destination_lng=-122.4");
-    expect(fetchMock.mock.calls[3][0]).toContain("/plans/plan-1/weather?latitude=37.7&longitude=-122.5");
-  });
-
-  it("rejects malformed external responses instead of treating them as empty success", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ status: "ok", results: [{ name: "Broken" }] }), { status: 200 })
-    ));
-    await expect(searchPlaces("token", "plan-1", "lake tahoe")).rejects.toBeInstanceOf(MalformedResponseError);
-  });
-
-  it.each(["timeout", "rate_limit"] as const)("accepts the backend %s classification for external-data fallbacks", async (errorCategory) => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({
-        status: "unavailable",
-        temperature_celsius: null,
-        weather_code: null,
-        weather_condition: null,
-        forecast_hour: "2031-01-01T12:00:00Z",
-        daily_forecast: [],
-        timezone: null,
-        weather_score: 0.5,
-        error_category: errorCategory
-      }), { status: 200 })
-    ));
-
-    await expect(getWeather("token", "plan-1", 37.7749, -122.4194)).resolves.toMatchObject({
-      status: "unavailable",
-      error_category: errorCategory
-    });
   });
 
   it("sends itinerary create, edit, reorder, and delete contracts exactly", async () => {
