@@ -98,6 +98,20 @@ export type PlanBalance = {
   balance_cents: number;
 };
 
+export type ActivityRecommendation = {
+  activity_id: string;
+  activity_name: string;
+  rank: number;
+  total_score: number;
+  vote_score: number;
+  budget_score: number;
+  preference_score: number;
+  schedule_fit_score: number;
+  reasons: string[];
+  score_version: number;
+  is_neutral: boolean;
+};
+
 export type PlanDetail = PlanSummary & { activities: ActivitySummary[] };
 export type PlanMember = {
   id: string;

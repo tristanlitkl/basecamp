@@ -31,6 +31,7 @@ from app.models.user import User
 from app.realtime.connection_manager import connection_manager
 from app.services.event_service import append_plan_event, broadcast_committed_plan_event
 from app.services.planning_service import bump_planning_version, require_mutable_plan
+from app.services.recommendation_service import recompute_plan_scores
 from app.services.idempotency_service import claim_operation, complete_operation, fail_operation
 
 router = APIRouter(tags=["coordination"])
@@ -316,6 +317,8 @@ async def remove_member(
     target_id = target.id
     target_user_id = target.user_id
     await session.delete(target)
+    await session.flush()
+    await recompute_plan_scores(session, plan_id)
     await complete_operation(
         session, claim, target_id, {"removed": True}, response_status=status.HTTP_204_NO_CONTENT
     )
@@ -833,6 +836,7 @@ async def decide_suggestion(
         if activity is None:
             raise HTTPException(status_code=409, detail={"error": "version_conflict"})
         await bump_planning_version(session, plan_id)
+        await recompute_plan_scores(session, plan_id)
     suggestion.status = decision
     suggestion.reviewed_by_user_id = user.id
     suggestion.reviewed_at = datetime.now(timezone.utc)
@@ -932,6 +936,7 @@ async def upsert_availability(
         )
     )
     await session.execute(statement)
+    await recompute_plan_scores(session, plan_id)
     event = await append_plan_event(
         session,
         plan_id=plan_id,
@@ -1032,6 +1037,7 @@ async def decide_date_suggestion(
         )
         if result.scalar_one_or_none() is None:
             raise HTTPException(status_code=409, detail={"error": "version_conflict"})
+        await recompute_plan_scores(session, plan_id)
     suggestion.status = decision
     suggestion.reviewed_by_user_id = user.id
     suggestion.reviewed_at = datetime.now(timezone.utc)
@@ -1346,6 +1352,7 @@ async def decide_plan_suggestion(
         )
         if result.scalar_one_or_none() is None:
             raise HTTPException(status_code=409, detail={"error": "version_conflict"})
+        await recompute_plan_scores(session, plan_id)
     suggestion.status = decision
     suggestion.reviewed_by_user_id = user.id
     suggestion.reviewed_at = datetime.now(timezone.utc)

@@ -3,6 +3,7 @@ import { getSession } from "next-auth/react";
 import { apiBaseUrl } from "@/lib/env";
 import type {
   ActivitySummary,
+  ActivityRecommendation,
   CreateActivityInput,
   Expense,
   ExpenseMutationResponse,
@@ -116,6 +117,10 @@ export function resyncPlan(token: string, planId: string): Promise<ResyncSnapsho
 
 export function getPlanBalances(token: string, planId: string): Promise<PlanBalance[]> {
   return apiFetch<PlanBalance[]>(token, `/plans/${planId}/balances`);
+}
+
+export function getRecommendations(token: string, planId: string): Promise<ActivityRecommendation[]> {
+  return apiFetch<ActivityRecommendation[]>(token, `/plans/${planId}/recommendations`);
 }
 
 export function createInvite(token: string, planId: string): Promise<{ token: string; plan_id: string }> {

@@ -30,6 +30,7 @@ from app.models.user import User
 from app.models.vote import ActivityVote
 from app.services.event_service import append_plan_event, broadcast_committed_plan_event
 from app.services.planning_service import bump_planning_version, require_mutable_plan
+from app.services.recommendation_service import recompute_plan_scores
 
 router = APIRouter(tags=["plans"])
 
@@ -283,6 +284,7 @@ async def patch_plan(
         "travel_notes",
     } & changes.keys():
         await bump_planning_version(session, plan_id)
+        await recompute_plan_scores(session, plan_id)
         await session.refresh(plan)
     event = await append_plan_event(
         session,

@@ -19,6 +19,7 @@ from app.models.user import User
 from app.services.event_service import append_plan_event, broadcast_committed_plan_event
 from app.services.idempotency_service import claim_operation, complete_operation, fail_operation
 from app.services.planning_service import bump_planning_version, require_mutable_plan
+from app.services.recommendation_service import recompute_plan_scores
 
 router = APIRouter(tags=["itinerary"])
 
@@ -154,6 +155,7 @@ async def create_item(
     session.add(item)
     await session.flush()
     await bump_planning_version(session, plan_id)
+    await recompute_plan_scores(session, plan_id)
     body = response(item)
     await complete_operation(session, claim, item.id, body, response_status=status.HTTP_201_CREATED)
     event = await append_plan_event(
@@ -199,6 +201,7 @@ async def patch_item(
     if item is None:
         raise HTTPException(status_code=409, detail={"error": "version_conflict"})
     await bump_planning_version(session, plan_id)
+    await recompute_plan_scores(session, plan_id)
     event = await append_plan_event(
         session,
         plan_id=plan_id,
@@ -269,6 +272,7 @@ async def reorder_item(
     if item is None:
         raise HTTPException(status_code=409, detail={"error": "version_conflict"})
     await bump_planning_version(session, plan_id)
+    await recompute_plan_scores(session, plan_id)
     event = await append_plan_event(
         session,
         plan_id=plan_id,
@@ -306,6 +310,7 @@ async def delete_item(
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=409, detail={"error": "version_conflict"})
     await bump_planning_version(session, plan_id)
+    await recompute_plan_scores(session, plan_id)
     event = await append_plan_event(
         session,
         plan_id=plan_id,

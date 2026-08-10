@@ -29,6 +29,7 @@ import {
   decideDateSuggestion,
   decidePlanSuggestion,
   getPlanBalances,
+  getRecommendations,
   isAuthenticationError,
   isPlanMembershipError,
   patchActivity,
@@ -54,7 +55,7 @@ import { AvailabilityCalendar } from "@/components/plans/availability-calendar";
 import { AdventureBackground } from "@/components/plans/adventure-background";
 import { avatarEmoji } from "@/lib/avatar";
 import { sortMembers } from "@/lib/member-directory";
-import type { ActivitySummary, Expense, PlanBalance, PlanDetail, ResyncSnapshot } from "@/types/api";
+import type { ActivityRecommendation, ActivitySummary, Expense, PlanBalance, PlanDetail, ResyncSnapshot } from "@/types/api";
 
 type TravelMode = "car" | "plane" | "train" | "bus";
 
@@ -145,6 +146,17 @@ function TripMembersCard({
 
 function DashboardTile({ label, icon, value, onClick }: { label: string; icon: string; value: React.ReactNode; onClick: () => void }) {
   return <button className="card stat dashboard-tile" type="button" onClick={onClick}><span><i aria-hidden="true">{icon}</i> {label}</span><strong>{value}</strong><small>Open editor</small></button>;
+}
+
+function RecommendationCard({ recommendations }: { recommendations: ActivityRecommendation[] }) {
+  const insufficientSignals = recommendations.length > 0 && recommendations.every((item) => item.is_neutral);
+  return <section className="card section-card recommendations" aria-labelledby="recommendations-heading">
+    <div className="section-heading"><div><h2 id="recommendations-heading">Recommended activities</h2><p className="muted small">A consistent ranking from your group’s saved votes, budget, and dates.</p></div></div>
+    {recommendations.length === 0 ? <p className="muted small">Add activities to see ranked recommendations.</p> : <>
+      {insufficientSignals && <p className="muted small">Not enough signals yet — showing a neutral ordering.</p>}
+      <ol className="recommendation-list">{recommendations.map((item) => <li key={item.activity_id}><span className="recommendation-rank">{item.rank}</span><div><strong>{item.activity_name}</strong><p className="muted small">{item.reasons.join(" · ")}</p></div><strong className="recommendation-score">{item.total_score}</strong></li>)}</ol>
+    </>}
+  </section>;
 }
 
 function DashboardModal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
@@ -262,6 +274,7 @@ export default function PlanPage() {
   const [plan, setPlan] = useState<PlanDetail | null>(null);
   const [snapshot, setSnapshot] = useState<ResyncSnapshot | null>(null);
   const [balances, setBalances] = useState<PlanBalance[]>([]);
+  const [recommendations, setRecommendations] = useState<ActivityRecommendation[]>([]);
   const [activityName, setActivityName] = useState("");
   const [activityDescription, setActivityDescription] = useState("");
   const [activityAddress, setActivityAddress] = useState("");
@@ -313,6 +326,7 @@ export default function PlanPage() {
     onSnapshot: (next) => {
       applySnapshot(next);
       if (session?.appJwt) void getPlanBalances(session.appJwt, planId).then(setBalances).catch(() => undefined);
+      if (session?.appJwt) void getRecommendations(session.appJwt, planId).then(setRecommendations).catch(() => undefined);
     },
     onPlanEvent: async () => {
       // Realtime packets only invalidate local state; REST resync remains authoritative.
@@ -338,12 +352,14 @@ export default function PlanPage() {
   async function load() {
     if (!session?.appJwt) return;
     await syncUser(session.appJwt);
-    const [nextSnapshot, nextBalances] = await Promise.all([
+    const [nextSnapshot, nextBalances, nextRecommendations] = await Promise.all([
       resyncPlan(session.appJwt, planId),
-      getPlanBalances(session.appJwt, planId)
+      getPlanBalances(session.appJwt, planId),
+      getRecommendations(session.appJwt, planId)
     ]);
     applySnapshot(nextSnapshot);
     setBalances(nextBalances);
+    setRecommendations(nextRecommendations);
   }
 
   useEffect(() => {
@@ -476,6 +492,8 @@ export default function PlanPage() {
         </form>}<details><summary>Discussion ({snapshot.activity_comments.filter((comment) => comment.activity_id === activity.id && !comment.deleted_at).length})</summary>{snapshot.activity_comments.filter((comment) => comment.activity_id === activity.id).map((comment) => <div className="conversation" key={comment.id}><span className="avatar">{initials(comment.author_display_name)}</span><div><strong>{comment.author_display_name}</strong><p>{comment.deleted_at ? "Comment deleted" : comment.body}</p></div></div>)}<form className="cluster" onSubmit={(event) => { event.preventDefault(); const body = commentBodies[activity.id]?.trim(); if (body) { void mutate(() => createComment(session.appJwt!, planId, activity.id, body, crypto.randomUUID())); setCommentBodies((current) => ({ ...current, [activity.id]: "" })); } }}><label className="field" style={{ flex: 1 }}>Comment <input value={commentBodies[activity.id] ?? ""} onChange={(event) => setCommentBodies((current) => ({ ...current, [activity.id]: event.target.value }))} /></label><button className="btn" disabled={pending}>Post comment</button></form><form className="cluster" onSubmit={(event) => { event.preventDefault(); const message = String(new FormData(event.currentTarget).get("suggestion") ?? ""); if (message.trim()) void mutate(() => createActivitySuggestion(session.appJwt!, planId, activity.id, { suggestion_type: "general_modification", proposed_changes_json: { notes: message.trim() }, message, client_operation_id: crypto.randomUUID() })); }}><label className="field" style={{ flex: 1 }}>Suggest a change <input name="suggestion" /></label><button className="btn btn-secondary" disabled={pending}>Submit suggestion</button></form>{snapshot.activity_suggestions.filter((suggestion) => suggestion.activity_id === activity.id).map((suggestion) => <div className="suggestion" key={suggestion.id}><div className="split"><span><strong>{suggestion.author_display_name}</strong>: {suggestion.message}</span><span className="badge">{suggestion.status}</span></div>{canManage && suggestion.status === "open" && <div className="cluster"><button className="btn" disabled={disabled} onClick={() => void mutate(() => decideActivitySuggestion(session.appJwt!, planId, activity.id, suggestion.id, "accept", activity.version, crypto.randomUUID()))}>Accept</button><button className="btn btn-secondary" disabled={pending} onClick={() => void mutate(() => decideActivitySuggestion(session.appJwt!, planId, activity.id, suggestion.id, "dismiss", activity.version, crypto.randomUUID()))}>Dismiss</button></div>}</div>)}</details></article> };
       }); const notInItinerary = activityCards.filter(({ activityId }) => !itineraryActivityIds.has(activityId)); const inItinerary = activityCards.filter(({ activityId }) => itineraryActivityIds.has(activityId)); return <div className="activity-groups" style={{ marginTop: showActivityForm ? 16 : 0 }}><DisclosureSection id="trip-ideas-not-in-itinerary" title={`Not in itinerary (${notInItinerary.length})`} summary="Activities still waiting to be scheduled." defaultOpen={true} className="nested-disclosure"><div className="stack">{notInItinerary.length ? notInItinerary.map(({ card }) => card) : <p className="muted small">Every trip idea is already in the itinerary.</p>}</div></DisclosureSection><DisclosureSection id="trip-ideas-in-itinerary" title={`In itinerary (${inItinerary.length})`} summary="Activities represented in the current itinerary." defaultOpen={true} className="nested-disclosure"><div className="stack">{inItinerary.length ? inItinerary.map(({ card }) => card) : <p className="muted small">No trip ideas are in the itinerary yet.</p>}</div></DisclosureSection></div>; })()}
     </DisclosureSection>
+
+    <RecommendationCard recommendations={recommendations} />
 
     <section className="card section-card"><div className="section-heading"><div><h2>Route &amp; itinerary</h2><p className="muted small">Shape the day into a clear running order.</p></div></div><form className="cluster subcard" onSubmit={(event: FormEvent) => { event.preventDefault(); if (!itineraryTitle.trim()) { setError("Enter an itinerary title."); return; } void mutate(() => createItineraryItem(session.appJwt!, planId, { title: itineraryTitle.trim(), client_operation_id: crypto.randomUUID() })); setItineraryTitle(""); }}><label className="field" style={{ flex: 1 }}>Item <input value={itineraryTitle} onChange={(event) => setItineraryTitle(event.target.value)} disabled={disabled} /></label><button className="btn" disabled={disabled}>Add item</button></form>
       <div className="timeline">{itinerary.map((item, index) => <article className="itinerary-row" key={item.id}><span className="step">{index + 1}</span><div><div className="split"><strong>{item.title}</strong><div className="cluster"><button className="btn btn-secondary" disabled={disabled} onClick={() => setEditingItineraryId(item.id)}>Edit</button><button className="btn btn-quiet" disabled={disabled || index === 0} onClick={() => void mutate(() => reorderItineraryItem(session.appJwt!, planId, item.id, { expected_version: item.version, previous_item_id: index > 1 ? itinerary[index - 2].id : undefined, next_item_id: itinerary[index - 1].id }))}>Move up</button><button className="btn btn-quiet" disabled={disabled || index === itinerary.length - 1} onClick={() => void mutate(() => reorderItineraryItem(session.appJwt!, planId, item.id, { expected_version: item.version, previous_item_id: itinerary[index + 1].id, next_item_id: itinerary[index + 2]?.id }))}>Move down</button><button className="btn btn-danger" disabled={disabled} onClick={() => { if (window.confirm(`Delete ${item.title}?`)) void mutate(() => deleteItineraryItem(session.appJwt!, planId, item.id, item.version)); }}>Delete</button></div></div>{editingItineraryId === item.id && <form className="cluster" onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const title = String(new FormData(event.currentTarget).get("title") ?? "").trim(); if (!title) { setError("Enter an itinerary title."); return; } void mutate(() => patchItineraryItem(session.appJwt!, planId, item.id, { title, expected_version: item.version })); setEditingItineraryId(null); }}><label className="field" style={{ flex: 1 }}>Title <input name="title" defaultValue={item.title} disabled={disabled} /></label><button className="btn" disabled={disabled}>Save item</button><button className="btn btn-secondary" type="button" onClick={() => setEditingItineraryId(null)}>Cancel</button></form>}</div></article>)}</div></section>

@@ -11,6 +11,7 @@ from app.api.routes import (
     invites,
     itinerary,
     plans,
+    recommendations,
 )
 from app.config import Settings, get_settings
 from app.core.cors import ALLOWED_HEADERS, ALLOWED_METHODS
@@ -35,6 +36,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(plans.router)
+    app.include_router(recommendations.router)
     app.include_router(invites.router)
     app.include_router(activities.router)
     app.include_router(itinerary.router)

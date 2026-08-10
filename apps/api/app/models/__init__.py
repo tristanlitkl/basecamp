@@ -7,6 +7,7 @@ from app.models.invite import PlanInvite
 from app.models.idempotency import IdempotencyRecord
 from app.models.itinerary import ItineraryItem
 from app.models.ledger import LedgerEntry
+from app.models.recommendation import ActivityScore
 from app.models.event import PlanEvent
 from app.models.plan import (
     Plan,
@@ -23,6 +24,7 @@ __all__ = [
     "Activity",
     "ActivityComment",
     "ActivitySuggestion",
+    "ActivityScore",
     "CoOwnerRequest",
     "ActivityVote",
     "Expense",

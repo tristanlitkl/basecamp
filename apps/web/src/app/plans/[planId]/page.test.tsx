@@ -21,6 +21,7 @@ import {
   decideActivitySuggestion, decidePlanSuggestion,
   decideDateSuggestion,
   getPlanBalances,
+  getRecommendations,
   patchActivity,
   patchExpense,
   patchItineraryItem,
@@ -45,7 +46,7 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api-client")>();
   return {
     ...actual,
-    syncUser: vi.fn(), resyncPlan: vi.fn(), getPlanBalances: vi.fn(),
+    syncUser: vi.fn(), resyncPlan: vi.fn(), getPlanBalances: vi.fn(), getRecommendations: vi.fn(),
     createActivity: vi.fn(), patchActivity: vi.fn(), deleteActivity: vi.fn(), voteActivity: vi.fn(),
     createItineraryItem: vi.fn(), patchItineraryItem: vi.fn(), reorderItineraryItem: vi.fn(), deleteItineraryItem: vi.fn(),
     createExpense: vi.fn(), patchExpense: vi.fn(), deleteExpense: vi.fn(),
@@ -74,9 +75,10 @@ function snapshot(role: "owner" | "co_owner" | "member" = "owner", status: "draf
   };
 }
 
-async function renderPlan(next = snapshot()) {
+async function renderPlan(next = snapshot(), recommendationRows: Awaited<ReturnType<typeof getRecommendations>> = [{ activity_id: "activity-1", activity_name: "Kayaking", rank: 1, total_score: 875, vote_score: 1000, budget_score: 1000, preference_score: 500, schedule_fit_score: 500, reasons: ["Strong group support", "Fits the current budget", "Schedule details unavailable", "No stored preferences yet"], score_version: 1, is_neutral: false }]) {
   vi.mocked(resyncPlan).mockResolvedValue(next);
   vi.mocked(getPlanBalances).mockResolvedValue([{ user_id: "user-1", balance_cents: 500 }, { user_id: "user-2", balance_cents: -500 }]);
+  vi.mocked(getRecommendations).mockResolvedValue(recommendationRows);
   render(<PlanPage />);
   await screen.findByRole("heading", { name: "Beach day" });
 }
@@ -105,6 +107,23 @@ describe("Phase 1B.5 planning UI", () => {
     await waitFor(() => expect(createInvite).toHaveBeenCalledWith("app-jwt", "plan-1"));
     await waitFor(() => expect(resyncPlan).toHaveBeenCalledTimes(2));
     expect(screen.getByText(/invite-token/)).toBeTruthy();
+  });
+
+  it("renders deterministic ranked recommendations and refreshes them with the authoritative load", async () => {
+    await renderPlan();
+    expect(screen.getByRole("heading", { name: "Recommended activities" })).toBeTruthy();
+    expect(await screen.findByText(/Strong group support/)).toBeTruthy();
+    expect(getRecommendations).toHaveBeenCalledWith("app-jwt", "plan-1");
+    fireEvent.click(screen.getByRole("button", { name: "Vote yes" }));
+    await waitFor(() => expect(getRecommendations).toHaveBeenCalledTimes(2));
+  });
+
+  it("shows empty and insufficient-signal recommendation states", async () => {
+    await renderPlan(snapshot(), []);
+    expect(screen.getByText("Add activities to see ranked recommendations.")).toBeTruthy();
+    cleanup();
+    await renderPlan(snapshot(), [{ activity_id: "activity-1", activity_name: "Kayaking", rank: 1, total_score: 500, vote_score: 500, budget_score: 500, preference_score: 500, schedule_fit_score: 500, reasons: ["Limited voting data", "Budget details unavailable", "Schedule details unavailable", "No stored preferences yet"], score_version: 1, is_neutral: true }]);
+    expect(await screen.findByText(/Not enough signals yet/)).toBeTruthy();
   });
 
   it("finalizes and unfinalizes with the authoritative plan version and resyncs", async () => {
