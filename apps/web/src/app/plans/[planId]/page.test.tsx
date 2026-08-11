@@ -225,20 +225,94 @@ describe("Phase 1B.5 planning UI", () => {
     await waitFor(() => expect(resyncPlan).toHaveBeenCalledTimes(2));
   });
 
-  it("adds an activity to the itinerary through the existing idempotent item endpoint and resyncs", async () => {
+  it("opens the add-to-itinerary scheduling modal and cancels without a mutation", async () => {
     await renderPlan();
     const activity = screen.getByRole("heading", { name: "Kayaking" }).closest("article")!;
     fireEvent.click(within(activity).getByRole("button", { name: "Add to itinerary" }));
+    const dialog = screen.getByRole("dialog", { name: "Add to itinerary" });
+    expect(within(dialog).getByLabelText("Schedule date")).toBeTruthy();
+    expect(within(dialog).getByLabelText("Start time")).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Add & schedule" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText("Schedule date"), { target: { value: "2026-08-01" } });
+    expect(within(dialog).getByRole("button", { name: "Add & schedule" }).hasAttribute("disabled")).toBe(true);
+    expect(createItineraryItem).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add to itinerary" })).toBeNull());
+    expect(createItineraryItem).not.toHaveBeenCalled();
+    expect(getRecommendations).toHaveBeenCalledTimes(1);
+  });
+
+  it("adds and schedules an activity through the existing itinerary mutation and authoritative refresh", async () => {
+    const refreshed = snapshot();
+    refreshed.itinerary_items[0] = { ...refreshed.itinerary_items[0], activity_id: "activity-1", title: "Kayaking", starts_at: "2026-08-01T18:30:00.000Z" };
+    await renderPlan();
+    const activity = screen.getByRole("heading", { name: "Kayaking" }).closest("article")!;
+    fireEvent.click(within(activity).getByRole("button", { name: "Add to itinerary" }));
+    const dialog = screen.getByRole("dialog", { name: "Add to itinerary" });
+    fireEvent.change(within(dialog).getByLabelText("Schedule date"), { target: { value: "2026-08-01" } });
+    fireEvent.change(within(dialog).getByLabelText("Start time"), { target: { value: "18:30" } });
+    vi.mocked(resyncPlan).mockResolvedValue(refreshed);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add & schedule" }));
+    await waitFor(() => expect(createItineraryItem).toHaveBeenCalledWith("app-jwt", "plan-1", {
+      title: "Kayaking", activity_id: "activity-1", starts_at: "2026-08-01T18:30:00.000Z", client_operation_id: "operation-id"
+    }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add to itinerary" })).toBeNull());
+    expect(screen.getByLabelText(/Saturday, August 1, 2026:.*Scheduled: Kayaking/)).toBeTruthy();
+  });
+
+  it("adds an activity unscheduled when Schedule later is selected and keeps it off the calendar", async () => {
+    const refreshed = snapshot();
+    refreshed.itinerary_items[0] = { ...refreshed.itinerary_items[0], activity_id: "activity-1", title: "Kayaking", starts_at: null };
+    await renderPlan();
+    const activity = screen.getByRole("heading", { name: "Kayaking" }).closest("article")!;
+    fireEvent.click(within(activity).getByRole("button", { name: "Add to itinerary" }));
+    vi.mocked(resyncPlan).mockResolvedValue(refreshed);
+    fireEvent.click(screen.getByRole("button", { name: "Schedule later" }));
     await waitFor(() => expect(createItineraryItem).toHaveBeenCalledWith("app-jwt", "plan-1", {
       title: "Kayaking", activity_id: "activity-1", client_operation_id: "operation-id"
     }));
-    await waitFor(() => expect(resyncPlan).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(within(screen.getByRole("heading", { name: "Kayaking" }).closest("article")!).getByRole("button", { name: "Schedule" })).toBeTruthy());
+    expect(screen.queryByLabelText(/Scheduled: Kayaking/)).toBeNull();
+  });
+
+  it("uses the portal modal safely on a narrow viewport and ignores a duplicate schedule submit", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    const refreshed = snapshot();
+    refreshed.itinerary_items[0] = { ...refreshed.itinerary_items[0], activity_id: "activity-1", title: "Kayaking", starts_at: "2026-08-01T18:30:00.000Z" };
+    await renderPlan();
+    const activity = screen.getByRole("heading", { name: "Kayaking" }).closest("article")!;
+    fireEvent.click(within(activity).getByRole("button", { name: "Add to itinerary" }));
+    const dialog = screen.getByRole("dialog", { name: "Add to itinerary" });
+    expect(dialog.parentElement?.parentElement).toBe(document.body);
+    fireEvent.change(within(dialog).getByLabelText("Schedule date"), { target: { value: "2026-08-01" } });
+    fireEvent.change(within(dialog).getByLabelText("Start time"), { target: { value: "18:30" } });
+    vi.mocked(resyncPlan).mockResolvedValue(refreshed);
+    const submit = within(dialog).getByRole("button", { name: "Add & schedule" });
+    fireEvent.click(submit);
+    fireEvent.click(submit);
+    await waitFor(() => expect(createItineraryItem).toHaveBeenCalledTimes(1));
+  });
+
+  it("schedules an existing unscheduled itinerary item without creating a duplicate and labels scheduled items", async () => {
+    const unscheduled = snapshot();
+    unscheduled.itinerary_items[0] = { ...unscheduled.itinerary_items[0], activity_id: "activity-1", title: "Kayaking", starts_at: null, version: 2 };
+    await renderPlan(unscheduled);
+    const activity = screen.getByRole("heading", { name: "Kayaking" }).closest("article")!;
+    fireEvent.click(within(activity).getByRole("button", { name: "Schedule" }));
+    const dialog = screen.getByRole("dialog", { name: "Schedule activity" });
+    fireEvent.change(within(dialog).getByLabelText("Schedule date"), { target: { value: "2026-08-01" } });
+    fireEvent.change(within(dialog).getByLabelText("Start time"), { target: { value: "09:15" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save schedule" }));
+    await waitFor(() => expect(patchItineraryItem).toHaveBeenCalledWith("app-jwt", "plan-1", "item-2", { starts_at: "2026-08-01T09:15:00.000Z", expected_version: 2 }));
+    expect(createItineraryItem).not.toHaveBeenCalled();
 
     cleanup();
-    const alreadyAdded = snapshot();
-    alreadyAdded.itinerary_items[0].activity_id = "activity-1";
-    await renderPlan(alreadyAdded);
-    expect(screen.getByRole("button", { name: "In itinerary" }).hasAttribute("disabled")).toBe(true);
+    const scheduled = snapshot();
+    scheduled.itinerary_items[0] = { ...scheduled.itinerary_items[0], activity_id: "activity-1", title: "Kayaking", starts_at: "2026-08-01T09:15:00.000Z" };
+    await renderPlan(scheduled);
+    const scheduledActivity = screen.getByRole("heading", { name: "Kayaking" }).closest("article")!;
+    expect(within(scheduledActivity).getByRole("button", { name: "Scheduled" }).hasAttribute("disabled")).toBe(true);
+    expect(within(scheduledActivity).queryByRole("button", { name: "Schedule" })).toBeNull();
   });
 
   it("orders itinerary items and sends current versions and neighbor contracts", async () => {
