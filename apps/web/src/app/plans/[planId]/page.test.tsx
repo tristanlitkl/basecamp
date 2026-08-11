@@ -112,12 +112,36 @@ describe("Phase 1B.5 planning UI", () => {
   it("renders deterministic ranked recommendations and refreshes them with the authoritative load", async () => {
     await renderPlan();
     expect(screen.getByRole("heading", { name: "Recommended activities" })).toBeTruthy();
+    expect(screen.getByText("Ranked from your group’s votes, budget, and schedule.")).toBeTruthy();
+    expect(await screen.findByText(/Fits budget/)).toBeTruthy();
     expect(screen.getAllByText("Kayaking")).toHaveLength(2);
-    expect(screen.getByText("875")).toBeTruthy();
-    expect(await screen.findByText(/Strong group support/)).toBeTruthy();
+    expect(screen.getAllByText("#1")).toHaveLength(1);
+    expect(screen.getByText("88")).toBeTruthy();
+    expect(screen.queryByText("875")).toBeNull();
+    expect(screen.getByText(/Strong group support/)).toBeTruthy();
+    expect(screen.queryByText("No stored preferences yet")).toBeNull();
+    expect(screen.queryByText("Budget details unavailable")).toBeNull();
+    expect(screen.queryByText("Schedule details unavailable")).toBeNull();
     expect(getRecommendations).toHaveBeenCalledWith("app-jwt", "plan-1");
     fireEvent.click(screen.getByRole("button", { name: "Vote yes" }));
     await waitFor(() => expect(getRecommendations).toHaveBeenCalledTimes(2));
+  });
+
+  it("formats recommendation scores and keeps the authoritative ranking order", async () => {
+    await renderPlan(snapshot(), [
+      { activity_id: "activity-1", activity_name: "Top choice", rank: 1, total_score: 875, vote_score: 1000, budget_score: 1000, preference_score: 500, schedule_fit_score: 500, reasons: ["Strong group support", "Budget details unavailable", "No stored preferences yet"], score_version: 1, is_neutral: false },
+      { activity_id: "activity-2", activity_name: "Second choice", rank: 2, total_score: 562, vote_score: 500, budget_score: 0, preference_score: 500, schedule_fit_score: 250, reasons: ["Group concerns", "Over the current budget", "Date availability is limited", "Schedule details unavailable", "No stored preferences yet"], score_version: 1, is_neutral: false }
+    ]);
+    expect(await screen.findByText(/Group concerns/)).toBeTruthy();
+    const list = screen.getByRole("heading", { name: "Recommended activities" }).closest("section")!.querySelector("ol")!;
+
+    expect(within(list).getAllByText(/^#\d+$/)).toHaveLength(2);
+    expect(list.children[0].textContent).toContain("#1 Top choice");
+    expect(list.children[1].textContent).toContain("#2 Second choice");
+    expect(screen.getByText("56")).toBeTruthy();
+    expect(screen.queryByText("562")).toBeNull();
+    expect(screen.getByText(/Does not fit budget/)).toBeTruthy();
+    expect(screen.getByText(/Schedule availability is limited/)).toBeTruthy();
   });
 
   it("shows empty and insufficient-signal recommendation states", async () => {
@@ -125,7 +149,11 @@ describe("Phase 1B.5 planning UI", () => {
     expect(screen.getByText("Add activities to see ranked recommendations.")).toBeTruthy();
     cleanup();
     await renderPlan(snapshot(), [{ activity_id: "activity-1", activity_name: "Kayaking", rank: 1, total_score: 500, vote_score: 500, budget_score: 500, preference_score: 500, schedule_fit_score: 500, reasons: ["Limited voting data", "Budget details unavailable", "Schedule details unavailable", "No stored preferences yet"], score_version: 1, is_neutral: true }]);
-    expect(await screen.findByText(/Not enough signals yet/)).toBeTruthy();
+    expect(await screen.findByText("Limited planning signals")).toBeTruthy();
+    expect(screen.queryByText("Limited voting data")).toBeNull();
+    expect(screen.queryByText("Budget details unavailable")).toBeNull();
+    expect(screen.queryByText("Schedule details unavailable")).toBeNull();
+    expect(screen.queryByText("No stored preferences yet")).toBeNull();
   });
 
   it("finalizes and unfinalizes with the authoritative plan version and resyncs", async () => {

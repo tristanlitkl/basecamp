@@ -118,11 +118,14 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .btn-quiet { min-height: 34px; padding: 6px 9px; border-color: transparent; background: transparent; color: var(--muted); }
 
 .badge { display: inline-flex; align-items: center; gap: 6px; min-height: 25px; padding: 4px 9px; border: 1px solid transparent; border-radius: 999px; background: #eef2f8; color: #4a5873; font-size: .72rem; font-weight: 800; text-transform: capitalize; }
-.recommendation-list { display: grid; gap: 9px; margin: 14px 0 0; padding: 0; list-style: none; }
-.recommendation-list li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.recommendation-list { display: grid; gap: 7px; margin: 12px 0 0; padding: 0; list-style: none; }
+.recommendation-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
 .recommendation-list p { margin: 3px 0 0; }
 .recommendation-rank, .recommendation-score { font-variant-numeric: tabular-nums; font-weight: 800; }
 .recommendation-rank { color: var(--cobalt-strong); }
+.recommendation-title { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.recommendation-score { display: inline-flex; align-items: baseline; gap: 1px; color: var(--cobalt-strong); }
+.recommendation-score small { color: var(--muted); font-size: .72rem; font-weight: 720; }
 .badge-owner { background: var(--cobalt-soft); color: var(--cobalt-strong); }
 .badge-co_owner { background: #f0efff; color: #594caf; }
 .badge-finalized, .badge-connected { background: var(--emerald-soft); color: var(--emerald); }

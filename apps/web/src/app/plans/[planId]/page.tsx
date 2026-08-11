@@ -148,13 +148,31 @@ function DashboardTile({ label, icon, value, onClick }: { label: string; icon: s
   return <button className="card stat dashboard-tile" type="button" onClick={onClick}><span><i aria-hidden="true">{icon}</i> {label}</span><strong>{value}</strong><small>Open editor</small></button>;
 }
 
+const recommendationReasonLabels: Record<string, string> = {
+  "Strong group support": "Strong group support",
+  "Mixed group support": "Mixed group support",
+  "Group concerns": "Group concerns",
+  "Fits the current budget": "Fits budget",
+  "Over the current budget": "Does not fit budget",
+  "Matches available dates": "Fits schedule",
+  "Date availability is limited": "Schedule availability is limited",
+  "Schedule availability is mixed": "Schedule availability is mixed",
+  "Scheduled outside the current date window": "Outside plan dates"
+};
+
+function displayRecommendationReasons(recommendation: ActivityRecommendation): string[] {
+  const reasons = recommendation.reasons.flatMap((reason) => {
+    const label = recommendationReasonLabels[reason];
+    return label ? [label] : [];
+  });
+  return reasons.length > 0 ? reasons : ["Limited planning signals"];
+}
+
 function RecommendationCard({ recommendations }: { recommendations: ActivityRecommendation[] }) {
-  const insufficientSignals = recommendations.length > 0 && recommendations.every((item) => item.is_neutral);
   return <section className="card section-card recommendations" aria-labelledby="recommendations-heading">
-    <div className="section-heading"><div><h2 id="recommendations-heading">Recommended activities</h2><p className="muted small">A consistent ranking from your group’s saved votes, budget, and dates.</p></div></div>
+    <div className="section-heading"><div><h2 id="recommendations-heading">Recommended activities</h2><p className="muted small">Ranked from your group’s votes, budget, and schedule.</p></div></div>
     {recommendations.length === 0 ? <p className="muted small">Add activities to see ranked recommendations.</p> : <>
-      {insufficientSignals && <p className="muted small">Not enough signals yet — showing a neutral ordering.</p>}
-      <ol className="recommendation-list">{recommendations.map((item) => <li key={item.activity_id}><span className="recommendation-rank">{item.rank}</span><div><strong>{item.activity_name}</strong><p className="muted small">{item.reasons.join(" · ")}</p></div><strong className="recommendation-score">{item.total_score}</strong></li>)}</ol>
+      <ol className="recommendation-list">{recommendations.map((item) => <li key={item.activity_id}><div><strong className="recommendation-title"><span className="recommendation-rank">#{item.rank}</span> {item.activity_name}</strong><p className="muted small">{displayRecommendationReasons(item).join(" · ")}</p></div><strong className="recommendation-score" aria-label={`${Math.round(item.total_score / 10)} out of 100`}><span>{Math.round(item.total_score / 10)}</span><small>/100</small></strong></li>)}</ol>
     </>}
   </section>;
 }
