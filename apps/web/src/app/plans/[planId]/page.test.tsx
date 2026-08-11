@@ -581,7 +581,7 @@ describe("Phase 1B.5 planning UI", () => {
     expect(screen.getByLabelText(/Monday, August 31, 2026: current trip date, 0 available, 0 maybe, 0 unavailable, 2 no response/)).toBeTruthy();
   });
 
-  it("renders an authoritative, ordered itinerary schedule with compact overflow and excludes unscheduled items", async () => {
+  it("renders an authoritative schedule ordered by start, position key, then ID with compact overflow and no unscheduled items", async () => {
     const next = snapshot();
     next.plan.ends_on = "2026-08-03T00:00:00Z";
     next.itinerary_items = [
@@ -589,36 +589,62 @@ describe("Phase 1B.5 planning UI", () => {
       { id: "first", plan_id: "plan-1", activity_id: null, title: "Breakfast", position_key: "2000", starts_at: "2026-08-01T08:00:00Z", ends_at: null, version: 1 },
       { id: "same-time-a", plan_id: "plan-1", activity_id: null, title: "Kayaks", position_key: "1000", starts_at: "2026-08-01T12:00:00Z", ends_at: null, version: 1 },
       { id: "same-time-b", plan_id: "plan-1", activity_id: null, title: "Lunch", position_key: "3000", starts_at: "2026-08-01T12:00:00Z", ends_at: null, version: 1 },
+      { id: "z-item", plan_id: "plan-1", activity_id: null, title: "Zulu stop", position_key: "5000", starts_at: "2026-08-01T13:00:00Z", ends_at: null, version: 1 },
+      { id: "a-item", plan_id: "plan-1", activity_id: null, title: "Alpha stop", position_key: "5000", starts_at: "2026-08-01T13:00:00Z", ends_at: null, version: 1 },
       { id: "unscheduled", plan_id: "plan-1", activity_id: null, title: "Unscheduled idea", position_key: "5000", starts_at: null, ends_at: null, version: 1 }
     ];
     await renderPlan(next);
-    const day = screen.getByLabelText(/Saturday, August 1, 2026:.*4 scheduled items.*Breakfast, Kayaks, Lunch, Dinner/);
-    expect(day.textContent).toContain("+2 more");
+    const day = screen.getByLabelText(/Saturday, August 1, 2026:.*6 scheduled items.*Breakfast, Kayaks, Lunch, Alpha stop, Zulu stop, Dinner/);
+    expect(day.textContent).toContain("+4 more");
     expect(day.textContent).not.toContain("Unscheduled idea");
     fireEvent.click(day);
     const schedule = screen.getByRole("heading", { name: "Schedule" }).parentElement!;
     expect(schedule.textContent).toContain("Breakfast");
     expect(schedule.textContent).toContain("8:00 AM");
     const scheduledTitles = [...schedule.querySelectorAll(".calendar-schedule-detail strong")].map((node) => node.textContent);
-    expect(scheduledTitles).toEqual(["Breakfast", "Kayaks", "Lunch", "Dinner"]);
+    expect(scheduledTitles).toEqual(["Breakfast", "Kayaks", "Lunch", "Alpha stop", "Zulu stop", "Dinner"]);
     expect(getRecommendations).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps schedule days correct across December to January and replaces them on authoritative refresh", async () => {
+  it("groups UTC midnight-boundary starts across December to January and refreshes from authoritative resync", async () => {
     const next = snapshot();
     next.plan.starts_on = "2026-12-31T00:00:00Z";
     next.plan.ends_on = "2027-01-01T00:00:00Z";
-    next.itinerary_items[0] = { ...next.itinerary_items[0], title: "New year breakfast", starts_at: "2027-01-01T00:00:00Z" };
+    next.itinerary_items = [
+      { id: "late-december", plan_id: "plan-1", activity_id: null, title: "Late December", position_key: "1000", starts_at: "2026-12-31T23:30:00Z", ends_at: null, version: 1 },
+      { id: "early-january", plan_id: "plan-1", activity_id: null, title: "Early January", position_key: "2000", starts_at: "2027-01-01T00:30:00Z", ends_at: null, version: 1 }
+    ];
     await renderPlan(next);
     expect(screen.getByRole("region", { name: "December 2026" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "January 2027" })).toBeTruthy();
-    const newYear = screen.getByLabelText(/Friday, January 1, 2027:.*Scheduled: New year breakfast/);
+    expect(screen.getByLabelText(/Thursday, December 31, 2026:.*Scheduled: Late December/)).toBeTruthy();
+    const newYear = screen.getByLabelText(/Friday, January 1, 2027:.*Scheduled: Early January/);
     fireEvent.click(newYear);
-    expect(screen.getAllByText("New year breakfast").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Early January").length).toBeGreaterThan(0);
     const refreshed = structuredClone(next);
     refreshed.itinerary_items = [];
     act(() => vi.mocked(usePlanSocket).mock.calls[0][0].onSnapshot(refreshed));
-    expect(screen.queryByText("New year breakfast")).toBeNull();
+    expect(screen.queryByText("Early January")).toBeNull();
+  });
+
+  it("removes a scheduled calendar item after the existing itinerary delete mutation resyncs", async () => {
+    const next = snapshot();
+    next.itinerary_items[0] = { ...next.itinerary_items[0], title: "Delete me", starts_at: "2026-08-01T12:00:00Z" };
+    await renderPlan(next);
+    expect(screen.getByLabelText(/Saturday, August 1, 2026:.*Scheduled: Delete me/)).toBeTruthy();
+    const refreshed = structuredClone(next);
+    refreshed.itinerary_items = refreshed.itinerary_items.filter((item) => item.id !== "item-2");
+    vi.mocked(resyncPlan).mockResolvedValue(refreshed);
+    const itinerarySection = screen.getByRole("heading", { name: "Route & itinerary" }).closest("section")!;
+    fireEvent.click(within(itinerarySection).getByText("Delete me").closest("article")!.querySelector("button.btn-danger")!);
+    await waitFor(() => expect(deleteItineraryItem).toHaveBeenCalledWith("app-jwt", "plan-1", "item-2", 2));
+    await waitFor(() => expect(screen.queryByLabelText(/Scheduled: Delete me/)).toBeNull());
+  });
+
+  it("uses compact scheduled counts in the mobile calendar rules", () => {
+    const styles = readFileSync("src/app/globals.css", "utf8");
+    expect(styles).toContain(".calendar-schedule-chip, .calendar-schedule-more { display: none; }");
+    expect(styles).toContain(".calendar-schedule-count { display: block; }");
   });
 
   it("groups explicit near-midnight starts onto the correct cross-month UTC calendar day", async () => {
