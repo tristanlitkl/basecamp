@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 
-import type { DateAvailability, DateSuggestion, PlanMember, PlanSummary } from "@/types/api";
+import type { ActivitySummary, DateAvailability, DateSuggestion, ItineraryItem, PlanMember, PlanSummary } from "@/types/api";
 
 type CalendarDay = {
   date: string;
@@ -19,8 +19,12 @@ type AvailabilityCalendarProps = {
   members: PlanMember[];
   availability: DateAvailability[];
   suggestions: DateSuggestion[];
+  itineraryItems?: ItineraryItem[];
+  activities?: ActivitySummary[];
   onOpenEditor?: () => void;
 };
+
+type ScheduledItem = ItineraryItem & { day: string; travelMode: ActivitySummary["travel_mode"] };
 
 /** Date-only utilities deliberately avoid `new Date("YYYY-MM-DD")` local-time parsing. */
 function dayKey(value: string) { return value.slice(0, 10); }
@@ -48,20 +52,40 @@ function dateLabel(value: string, options: Intl.DateTimeFormatOptions = { month:
   return new Intl.DateTimeFormat("en", { ...options, timeZone: "UTC" }).format(fromDayKey(value));
 }
 function fullDateLabel(value: string) { return dateLabel(value, { weekday: "long", month: "long", day: "numeric", year: "numeric" }); }
+/** Plan dates are canonical UTC date-only values, so schedule grouping uses the stored instant's UTC day. */
+function itineraryDayKey(value: string) { return new Date(value).toISOString().slice(0, 10); }
+function startTimeLabel(value: string) { return new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", timeZone: "UTC" }).format(new Date(value)); }
 function sortedSuggestions(suggestions: DateSuggestion[]) {
   return [...suggestions].sort((left, right) => right.yes_votes - left.yes_votes || right.maybe_votes - left.maybe_votes || left.no_votes - right.no_votes || left.starts_on.localeCompare(right.starts_on) || (left.created_at ?? "").localeCompare(right.created_at ?? ""));
 }
-function availabilitySummary(day: CalendarDay) {
+function availabilitySummary(day: CalendarDay, scheduledCount = 0) {
   const parts = [`${day.available} available`, `${day.maybe} maybe`, `${day.unavailable} unavailable`, `${day.noResponse} no response`];
   if (day.isCurrentTripDate) parts.unshift("current trip date");
   if (day.hasOpenSuggestion) parts.push("open date option");
+  if (scheduledCount) parts.push(`${scheduledCount} scheduled ${scheduledCount === 1 ? "item" : "items"}`);
   return parts.join(", ");
 }
 
-export function AvailabilityCalendar({ plan, members, availability, suggestions, onOpenEditor }: AvailabilityCalendarProps) {
+export function AvailabilityCalendar({ plan, members, availability, suggestions, itineraryItems = [], activities = [], onOpenEditor }: AvailabilityCalendarProps) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const boundaries = useMemo(() => [plan.starts_on, plan.ends_on, ...availability.map((entry) => entry.date), ...suggestions.flatMap((suggestion) => [suggestion.starts_on, suggestion.ends_on])]
-    .filter((value): value is string => Boolean(value)).map(dayKey), [plan.starts_on, plan.ends_on, availability, suggestions]);
+  const scheduledByDate = useMemo(() => {
+    const activityById = new Map(activities.map((activity) => [activity.id, activity]));
+    const byDate = new Map<string, ScheduledItem[]>();
+    for (const item of itineraryItems) {
+      if (!item.starts_at) continue;
+      const activity = item.activity_id ? activityById.get(item.activity_id) : undefined;
+      // A linked activity removed from the authoritative snapshot cannot be scheduled.
+      if (item.activity_id && !activity) continue;
+      const day = itineraryDayKey(item.starts_at);
+      byDate.set(day, [...(byDate.get(day) ?? []), { ...item, day, travelMode: activity?.travel_mode ?? null }]);
+    }
+    for (const items of byDate.values()) items.sort((left, right) =>
+      (left.starts_at ?? "").localeCompare(right.starts_at ?? "") || comparePositionKeys(left.position_key, right.position_key) || left.id.localeCompare(right.id)
+    );
+    return byDate;
+  }, [itineraryItems, activities]);
+  const boundaries = useMemo(() => [plan.starts_on, plan.ends_on, ...availability.map((entry) => entry.date), ...suggestions.flatMap((suggestion) => [suggestion.starts_on, suggestion.ends_on]), ...scheduledByDate.keys()]
+    .filter((value): value is string => Boolean(value)).map(dayKey), [plan.starts_on, plan.ends_on, availability, suggestions, scheduledByDate]);
   const earliest = boundaries.length ? boundaries.reduce((first, value) => value < first ? value : first) : null;
   const latest = boundaries.length ? boundaries.reduce((last, value) => value > last ? value : last) : null;
   const months = useMemo(() => {
@@ -94,6 +118,7 @@ export function AvailabilityCalendar({ plan, members, availability, suggestions,
     };
   };
   const selected = selectedDate ? dayFor(selectedDate) : null;
+  const selectedSchedule = selected ? scheduledByDate.get(selected.date) ?? [] : [];
   const selectedEntries = selected ? availabilityByDate.get(selected.date) ?? [] : [];
   const selectionsByMember = new Map(selectedEntries.map((entry) => [entry.user_id, entry]));
   const leadingSuggestion = sortedSuggestions(suggestions).find((suggestion) => suggestion.status === "open") ?? sortedSuggestions(suggestions)[0];
@@ -113,12 +138,23 @@ export function AvailabilityCalendar({ plan, members, availability, suggestions,
         return <section className="calendar-month" key={month} aria-label={dateLabel(firstDay, { month: "long", year: "numeric" })}>
           <h3>{dateLabel(firstDay, { month: "long", year: "numeric" })}</h3><div className="calendar-weekdays" aria-hidden="true">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((weekday) => <span key={weekday}>{weekday}</span>)}</div>
           <div className="calendar-days">{Array.from({ length: fromDayKey(firstDay).getUTCDay() }, (_, index) => <span className="calendar-blank" key={`blank-${index}`} />)}
-            {days.map((day) => <button aria-label={`${fullDateLabel(day.date)}: ${availabilitySummary(day)}. Select to view member details.`} aria-pressed={selectedDate === day.date} className={`calendar-day${day.isCurrentTripDate ? " is-current" : ""}${day.hasOpenSuggestion ? " has-open-option" : ""}`} key={day.date} onClick={() => setSelectedDate(day.date)} type="button"><time dateTime={day.date}>{fromDayKey(day.date).getUTCDate()}</time><span aria-hidden="true" className="calendar-availability-count">✓{day.available}</span><span aria-hidden="true" className="calendar-cell-markers">{day.maybe > 0 ? "❓" : ""}{day.unavailable > 0 ? "×" : ""}{day.noResponse > 0 ? "–" : ""}</span></button>)}</div>
+            {days.map((day) => { const schedule = scheduledByDate.get(day.date) ?? []; const visible = schedule.slice(0, 2); const overflow = schedule.length - visible.length; return <button aria-label={`${fullDateLabel(day.date)}: ${availabilitySummary(day, schedule.length)}${schedule.length ? `. Scheduled: ${schedule.map((item) => item.title).join(", ")}.` : ""} Select to view details.`} aria-pressed={selectedDate === day.date} className={`calendar-day${day.isCurrentTripDate ? " is-current" : ""}${day.hasOpenSuggestion ? " has-open-option" : ""}${schedule.length ? " has-schedule" : ""}`} key={day.date} onClick={() => setSelectedDate(day.date)} type="button"><time dateTime={day.date}>{fromDayKey(day.date).getUTCDate()}</time><span aria-hidden="true" className="calendar-availability-count">✓{day.available}</span><span aria-hidden="true" className="calendar-cell-markers">{day.maybe > 0 ? "❓" : ""}{day.unavailable > 0 ? "×" : ""}{day.noResponse > 0 ? "–" : ""}</span>{schedule.length > 0 && <span className="calendar-schedule" aria-hidden="true"><span className="calendar-schedule-count">{schedule.length} scheduled</span>{visible.map((item) => <span className="calendar-schedule-chip" key={item.id}>{item.title}</span>)}{overflow > 0 && <span className="calendar-schedule-more">+{overflow} more</span>}</span>}</button>; })}</div>
         </section>;
       })}
     </div>
-    {selected && <section aria-live="polite" className="calendar-detail" id="availability-calendar-detail"><div><h3>Availability for {fullDateLabel(selected.date)}</h3><p className="muted small">{availabilitySummary(selected)}</p></div><ul>{members.map((member) => { const response = selectionsByMember.get(member.user_id); const label = response ? response.status === "available" ? "✓ Available" : response.status === "maybe" ? "❓ Maybe" : "× Unavailable" : "– No response"; return <li key={member.user_id}><span>{member.display_name}</span><strong className={`calendar-member-status ${response ? `status-${response.status}` : "status-no-response"}`}>{label}</strong></li>; })}</ul></section>}
+    {selected && <section aria-live="polite" className="calendar-detail" id="availability-calendar-detail"><div><h3>Availability for {fullDateLabel(selected.date)}</h3><h4>Schedule</h4>{selectedSchedule.length ? <ul className="calendar-schedule-detail">{selectedSchedule.map((item) => <li key={item.id}><span><strong>{item.title}</strong>{item.travelMode && <small>{item.travelMode}</small>}</span><span>{item.starts_at ? startTimeLabel(item.starts_at) : "Time not set"}</span><a href="#itinerary">Itinerary</a></li>)}</ul> : <p className="muted small">No scheduled itinerary items for this day.</p>}<p className="muted small">{availabilitySummary(selected, selectedSchedule.length)}</p></div><ul className="calendar-member-list">{members.map((member) => { const response = selectionsByMember.get(member.user_id); const label = response ? response.status === "available" ? "✓ Available" : response.status === "maybe" ? "❓ Maybe" : "× Unavailable" : "– No response"; return <li key={member.user_id}><span>{member.display_name}</span><strong className={`calendar-member-status ${response ? `status-${response.status}` : "status-no-response"}`}>{label}</strong></li>; })}</ul></section>}
   </section>;
 }
 
 function CalendarLegend() { return <ul aria-label="Calendar legend" className="calendar-legend"><li><span aria-hidden="true" className="legend-mark legend-current">✓</span>Current trip date</li><li><span aria-hidden="true" className="legend-mark legend-option">··</span>Open date option</li><li><span aria-hidden="true" className="legend-mark">✓</span>Available</li><li><span aria-hidden="true" className="legend-mark">❓</span>Maybe</li><li><span aria-hidden="true" className="legend-mark">×</span>Unavailable</li><li><span aria-hidden="true" className="legend-mark">–</span>No response</li></ul>; }
+
+function comparePositionKeys(left: string, right: string) {
+  const [leftWhole, leftFraction = ""] = left.split(".");
+  const [rightWhole, rightFraction = ""] = right.split(".");
+  const wholeDifference = BigInt(leftWhole) - BigInt(rightWhole);
+  if (wholeDifference !== 0n) return wholeDifference < 0n ? -1 : 1;
+  const length = Math.max(leftFraction.length, rightFraction.length);
+  const normalizedLeft = leftFraction.padEnd(length, "0");
+  const normalizedRight = rightFraction.padEnd(length, "0");
+  return normalizedLeft === normalizedRight ? 0 : normalizedLeft < normalizedRight ? -1 : 1;
+}

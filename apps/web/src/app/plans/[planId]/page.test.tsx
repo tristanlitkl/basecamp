@@ -133,11 +133,13 @@ describe("Phase 1B.5 planning UI", () => {
       { activity_id: "activity-2", activity_name: "Second choice", rank: 2, total_score: 562, vote_score: 500, budget_score: 0, preference_score: 500, schedule_fit_score: 250, reasons: ["Group concerns", "Over the current budget", "Date availability is limited", "Schedule details unavailable", "No stored preferences yet"], score_version: 1, is_neutral: false }
     ]);
     expect(await screen.findByText(/Group concerns/)).toBeTruthy();
-    const list = screen.getByRole("heading", { name: "Recommended activities" }).closest("section")!.querySelector("ol")!;
+    const list = screen.getByRole("heading", { name: "Recommended activities" }).closest("section")!.querySelector(".recommendation-list")!;
 
-    expect(within(list).getAllByText(/^#\d+$/)).toHaveLength(2);
-    expect(list.children[0].textContent).toContain("#1 Top choice");
-    expect(list.children[1].textContent).toContain("#2 Second choice");
+    expect(within(list as HTMLElement).getAllByText(/^#\d+$/)).toHaveLength(2);
+    expect(list.querySelector("ol")).toBeNull();
+    expect(list.children[0].textContent).toContain("#1Top choice");
+    expect(list.children[0].querySelector(".recommendation-title")?.children).toHaveLength(2);
+    expect(list.children[1].textContent).toContain("#2Second choice");
     expect(screen.getByText("56")).toBeTruthy();
     expect(screen.queryByText("562")).toBeNull();
     expect(screen.getByText(/Does not fit budget/)).toBeTruthy();
@@ -253,7 +255,7 @@ describe("Phase 1B.5 planning UI", () => {
     fireEvent.click(within(refreshedSecond).getByRole("button", { name: "Edit" }));
     fireEvent.change(within(refreshedSecond).getByLabelText("Title"), { target: { value: "Moved second" } });
     fireEvent.click(within(refreshedSecond).getByRole("button", { name: "Save item" }));
-    await waitFor(() => expect(patchItineraryItem).toHaveBeenCalledWith("app-jwt", "plan-1", "item-2", { title: "Moved second", expected_version: 2 }));
+    await waitFor(() => expect(patchItineraryItem).toHaveBeenCalledWith("app-jwt", "plan-1", "item-2", { title: "Moved second", starts_at: null, expected_version: 2 }));
     fireEvent.click(within(screen.getByText("Second").closest("article")!).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(deleteItineraryItem).toHaveBeenCalledWith("app-jwt", "plan-1", "item-2", 2));
   });
@@ -577,6 +579,70 @@ describe("Phase 1B.5 planning UI", () => {
     expect(screen.getByRole("region", { name: "August 2026" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "September 2026" })).toBeTruthy();
     expect(screen.getByLabelText(/Monday, August 31, 2026: current trip date, 0 available, 0 maybe, 0 unavailable, 2 no response/)).toBeTruthy();
+  });
+
+  it("renders an authoritative, ordered itinerary schedule with compact overflow and excludes unscheduled items", async () => {
+    const next = snapshot();
+    next.plan.ends_on = "2026-08-03T00:00:00Z";
+    next.itinerary_items = [
+      { id: "late", plan_id: "plan-1", activity_id: null, title: "Dinner", position_key: "4000", starts_at: "2026-08-01T18:00:00Z", ends_at: null, version: 1 },
+      { id: "first", plan_id: "plan-1", activity_id: null, title: "Breakfast", position_key: "2000", starts_at: "2026-08-01T08:00:00Z", ends_at: null, version: 1 },
+      { id: "same-time-a", plan_id: "plan-1", activity_id: null, title: "Kayaks", position_key: "1000", starts_at: "2026-08-01T12:00:00Z", ends_at: null, version: 1 },
+      { id: "same-time-b", plan_id: "plan-1", activity_id: null, title: "Lunch", position_key: "3000", starts_at: "2026-08-01T12:00:00Z", ends_at: null, version: 1 },
+      { id: "unscheduled", plan_id: "plan-1", activity_id: null, title: "Unscheduled idea", position_key: "5000", starts_at: null, ends_at: null, version: 1 }
+    ];
+    await renderPlan(next);
+    const day = screen.getByLabelText(/Saturday, August 1, 2026:.*4 scheduled items.*Breakfast, Kayaks, Lunch, Dinner/);
+    expect(day.textContent).toContain("+2 more");
+    expect(day.textContent).not.toContain("Unscheduled idea");
+    fireEvent.click(day);
+    const schedule = screen.getByRole("heading", { name: "Schedule" }).parentElement!;
+    expect(schedule.textContent).toContain("Breakfast");
+    expect(schedule.textContent).toContain("8:00 AM");
+    const scheduledTitles = [...schedule.querySelectorAll(".calendar-schedule-detail strong")].map((node) => node.textContent);
+    expect(scheduledTitles).toEqual(["Breakfast", "Kayaks", "Lunch", "Dinner"]);
+    expect(getRecommendations).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps schedule days correct across December to January and replaces them on authoritative refresh", async () => {
+    const next = snapshot();
+    next.plan.starts_on = "2026-12-31T00:00:00Z";
+    next.plan.ends_on = "2027-01-01T00:00:00Z";
+    next.itinerary_items[0] = { ...next.itinerary_items[0], title: "New year breakfast", starts_at: "2027-01-01T00:00:00Z" };
+    await renderPlan(next);
+    expect(screen.getByRole("region", { name: "December 2026" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "January 2027" })).toBeTruthy();
+    const newYear = screen.getByLabelText(/Friday, January 1, 2027:.*Scheduled: New year breakfast/);
+    fireEvent.click(newYear);
+    expect(screen.getAllByText("New year breakfast").length).toBeGreaterThan(0);
+    const refreshed = structuredClone(next);
+    refreshed.itinerary_items = [];
+    act(() => vi.mocked(usePlanSocket).mock.calls[0][0].onSnapshot(refreshed));
+    expect(screen.queryByText("New year breakfast")).toBeNull();
+  });
+
+  it("groups explicit near-midnight starts onto the correct cross-month UTC calendar day", async () => {
+    const next = snapshot();
+    next.plan.starts_on = "2026-08-31T00:00:00Z";
+    next.plan.ends_on = "2026-09-01T00:00:00Z";
+    next.itinerary_items = [
+      { id: "august", plan_id: "plan-1", activity_id: null, title: "Late August", position_key: "1000", starts_at: "2026-08-31T23:59:00Z", ends_at: null, version: 1 },
+      { id: "september", plan_id: "plan-1", activity_id: null, title: "Early September", position_key: "2000", starts_at: "2026-09-01T00:00:00Z", ends_at: null, version: 1 }
+    ];
+    await renderPlan(next);
+    expect(screen.getByRole("region", { name: "August 2026" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "September 2026" })).toBeTruthy();
+    expect(screen.getByLabelText(/Monday, August 31, 2026:.*Scheduled: Late August/)).toBeTruthy();
+    expect(screen.getByLabelText(/Tuesday, September 1, 2026:.*Scheduled: Early September/)).toBeTruthy();
+  });
+
+  it("schedules an itinerary item through the existing idempotent mutation with an explicit UTC date and time", async () => {
+    await renderPlan();
+    fireEvent.change(screen.getByLabelText("Item"), { target: { value: "Sunset walk" } });
+    fireEvent.change(screen.getByLabelText("Schedule date"), { target: { value: "2026-08-01" } });
+    fireEvent.change(screen.getByLabelText("Start time"), { target: { value: "18:30" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    await waitFor(() => expect(createItineraryItem).toHaveBeenCalledWith("app-jwt", "plan-1", { title: "Sunset walk", starts_at: "2026-08-01T18:30:00.000Z", client_operation_id: "operation-id" }));
   });
 
   it("uses the red question-mark Maybe icon without losing the accessible label", async () => {

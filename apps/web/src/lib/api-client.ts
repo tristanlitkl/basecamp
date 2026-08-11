@@ -279,7 +279,7 @@ export function setPlanLifecycle(
 export function createItineraryItem(
   token: string,
   planId: string,
-  input: { title: string; activity_id?: string; client_operation_id: string }
+  input: { title: string; activity_id?: string; starts_at?: string; client_operation_id: string }
 ): Promise<ItineraryMutationResponse> {
   return apiFetch(token, `/plans/${planId}/itinerary-items`, { method: "POST", body: input });
 }
@@ -288,7 +288,7 @@ export function patchItineraryItem(
   token: string,
   planId: string,
   itemId: string,
-  input: { title?: string; expected_version: number }
+  input: { title?: string; starts_at?: string | null; expected_version: number }
 ): Promise<ItineraryMutationResponse> {
   return apiFetch(token, `/plans/${planId}/itinerary-items/${itemId}`, { method: "PATCH", body: input });
 }
