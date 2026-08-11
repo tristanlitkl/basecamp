@@ -155,7 +155,8 @@ async def create_item(
     session.add(item)
     await session.flush()
     await bump_planning_version(session, plan_id)
-    await recompute_plan_scores(session, plan_id)
+    if item.activity_id is not None and item.starts_at is not None:
+        await recompute_plan_scores(session, plan_id)
     body = response(item)
     await complete_operation(session, claim, item.id, body, response_status=status.HTTP_201_CREATED)
     event = await append_plan_event(
@@ -201,7 +202,8 @@ async def patch_item(
     if item is None:
         raise HTTPException(status_code=409, detail={"error": "version_conflict"})
     await bump_planning_version(session, plan_id)
-    await recompute_plan_scores(session, plan_id)
+    if item.activity_id is not None and "starts_at" in changes:
+        await recompute_plan_scores(session, plan_id)
     event = await append_plan_event(
         session,
         plan_id=plan_id,
@@ -272,7 +274,6 @@ async def reorder_item(
     if item is None:
         raise HTTPException(status_code=409, detail={"error": "version_conflict"})
     await bump_planning_version(session, plan_id)
-    await recompute_plan_scores(session, plan_id)
     event = await append_plan_event(
         session,
         plan_id=plan_id,
@@ -298,6 +299,7 @@ async def delete_item(
     session: AsyncSession = Depends(get_session),
 ) -> None:
     await require_mutable_plan(session, plan_id)
+    item = await item_in_plan(session, plan_id, item_id)
     result = await session.execute(
         ItineraryItem.__table__.delete()
         .where(
@@ -310,7 +312,8 @@ async def delete_item(
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=409, detail={"error": "version_conflict"})
     await bump_planning_version(session, plan_id)
-    await recompute_plan_scores(session, plan_id)
+    if item.activity_id is not None and item.starts_at is not None:
+        await recompute_plan_scores(session, plan_id)
     event = await append_plan_event(
         session,
         plan_id=plan_id,

@@ -184,7 +184,8 @@ async def patch_activity(
     if activity is None:
         raise HTTPException(status_code=409, detail={"error": "version_conflict"})
     await bump_planning_version(session, plan_id)
-    await recompute_plan_scores(session, plan_id)
+    if "estimated_cost_cents" in changes:
+        await recompute_plan_scores(session, plan_id)
     event = await append_plan_event(
         session,
         plan_id=plan_id,

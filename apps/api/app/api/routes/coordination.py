@@ -836,7 +836,8 @@ async def decide_suggestion(
         if activity is None:
             raise HTTPException(status_code=409, detail={"error": "version_conflict"})
         await bump_planning_version(session, plan_id)
-        await recompute_plan_scores(session, plan_id)
+        if "estimated_cost_cents" in changes:
+            await recompute_plan_scores(session, plan_id)
     suggestion.status = decision
     suggestion.reviewed_by_user_id = user.id
     suggestion.reviewed_at = datetime.now(timezone.utc)
@@ -1352,7 +1353,8 @@ async def decide_plan_suggestion(
         )
         if result.scalar_one_or_none() is None:
             raise HTTPException(status_code=409, detail={"error": "version_conflict"})
-        await recompute_plan_scores(session, plan_id)
+        if {"budget_cents", "starts_on", "ends_on"} & values.keys():
+            await recompute_plan_scores(session, plan_id)
     suggestion.status = decision
     suggestion.reviewed_by_user_id = user.id
     suggestion.reviewed_at = datetime.now(timezone.utc)

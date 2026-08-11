@@ -284,7 +284,18 @@ async def patch_plan(
         "travel_notes",
     } & changes.keys():
         await bump_planning_version(session, plan_id)
+    if {"budget_cents", "starts_on", "ends_on"} & changes.keys():
         await recompute_plan_scores(session, plan_id)
+    if {
+        "title",
+        "budget_cents",
+        "starts_on",
+        "ends_on",
+        "max_drive_minutes",
+        "travel_mode",
+        "travel_duration_minutes",
+        "travel_notes",
+    } & changes.keys():
         await session.refresh(plan)
     event = await append_plan_event(
         session,

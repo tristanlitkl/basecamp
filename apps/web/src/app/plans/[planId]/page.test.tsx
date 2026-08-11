@@ -112,6 +112,8 @@ describe("Phase 1B.5 planning UI", () => {
   it("renders deterministic ranked recommendations and refreshes them with the authoritative load", async () => {
     await renderPlan();
     expect(screen.getByRole("heading", { name: "Recommended activities" })).toBeTruthy();
+    expect(screen.getAllByText("Kayaking")).toHaveLength(2);
+    expect(screen.getByText("875")).toBeTruthy();
     expect(await screen.findByText(/Strong group support/)).toBeTruthy();
     expect(getRecommendations).toHaveBeenCalledWith("app-jwt", "plan-1");
     fireEvent.click(screen.getByRole("button", { name: "Vote yes" }));

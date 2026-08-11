@@ -103,6 +103,15 @@ def _schedule_score(
     return score, reason, False
 
 
+def _weighted_total(vote_score: int, budget_score: int, schedule_fit_score: int) -> int:
+    """Return the documented integer-only 50/25/25 weighted total."""
+    return (
+        vote_score * VOTE_WEIGHT
+        + budget_score * BUDGET_WEIGHT
+        + schedule_fit_score * SCHEDULE_WEIGHT
+    ) // MAX_SCORE
+
+
 async def compute_plan_scores(session: AsyncSession, plan_id: UUID) -> list[ComputedScore]:
     """Compute scores from current authoritative rows without writing or mutating versions."""
     plan = (await session.execute(select(Plan).where(Plan.id == plan_id))).scalar_one_or_none()
@@ -183,11 +192,7 @@ async def compute_plan_scores(session: AsyncSession, plan_id: UUID) -> list[Comp
             availability_by_date.get(scheduled_on, {}) if scheduled_on else {},
         )
         preference_score = NEUTRAL_SCORE
-        total = (
-            vote_score * VOTE_WEIGHT
-            + budget_score * BUDGET_WEIGHT
-            + schedule_score * SCHEDULE_WEIGHT
-        ) // MAX_SCORE
+        total = _weighted_total(vote_score, budget_score, schedule_score)
         results.append(
             ComputedScore(
                 activity_id=activity.id,
