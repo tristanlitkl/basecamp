@@ -295,6 +295,9 @@ async def vote_activity(
     )
     await session.execute(statement)
     await recompute_plan_scores(session, plan_id)
+    # Votes are an authoritative itinerary-draft input, so they invalidate a
+    # snapshot even though the derived score refresh itself does not.
+    await bump_planning_version(session, plan_id)
     event = await append_plan_event(
         session,
         plan_id=plan_id,

@@ -18,6 +18,7 @@ from app.models.user import User
 from app.services.event_service import append_plan_event, broadcast_committed_plan_event
 from app.services.planning_service import require_mutable_plan
 from app.services.recommendation_service import recompute_plan_scores
+from app.services.notification_service import create_notifications, plan_member_ids
 
 router = APIRouter(tags=["invites"])
 
@@ -134,6 +135,19 @@ async def join_invite(
             resource_type="plan_member",
             resource_id=membership.id,
             resource_version_after=None,
+        )
+        await create_notifications(
+            session,
+            plan_id=invite.plan_id,
+            recipients=await plan_member_ids(session, invite.plan_id),
+            actor_id=user.id,
+            event_type="member.joined",
+            entity_type="plan_member",
+            entity_id=membership.id,
+            title="A member joined the plan",
+            body=user.display_name,
+            metadata={"member_display_name": user.display_name},
+            source_key=f"member-joined:{membership.id}",
         )
         await session.commit()
         await broadcast_committed_plan_event(event)

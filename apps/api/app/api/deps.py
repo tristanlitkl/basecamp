@@ -14,6 +14,7 @@ from app.core.security import decode_app_jwt
 from app.db.base import get_session
 from app.models.plan import PlanMember
 from app.models.user import User
+from app.services.metrics_service import metrics
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -31,15 +32,21 @@ async def require_app_jwt(
     settings: Settings = Depends(get_settings),
 ) -> AppJwtClaims:
     if credentials is None or credentials.scheme.lower() != "bearer":
+        metrics.increment("auth_failures")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error": "missing_bearer_token"},
         )
 
-    payload = decode_app_jwt(credentials.credentials, settings)
+    try:
+        payload = decode_app_jwt(credentials.credentials, settings)
+    except HTTPException:
+        metrics.increment("auth_failures")
+        raise
     subject = str(payload.get("sub", ""))
     email = str(payload.get("email", ""))
     if not subject or not email:
+        metrics.increment("auth_failures")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error": "invalid_token_claims"},
@@ -61,9 +68,22 @@ async def get_current_user(
     result = await session.execute(select(User).where(User.auth_subject == claims.subject))
     user = result.scalar_one_or_none()
     if user is None:
+        metrics.increment("auth_failures")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error": "user_not_synced"},
+        )
+    return user
+
+
+async def require_app_admin(
+    user: User = Depends(get_current_user), settings: Settings = Depends(get_settings)
+) -> User:
+    """Require configured application administration, never merely a plan role."""
+    if user.email.strip().lower() not in settings.admin_email_set:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "application_admin_required"},
         )
     return user
 

@@ -98,6 +98,29 @@ export type PlanBalance = {
   balance_cents: number;
 };
 
+export type CollaborationNotification = {
+  id: string;
+  plan_id: string;
+  actor_user_id: string | null;
+  event_type: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  title: string;
+  body: string | null;
+  metadata: Record<string, unknown>;
+  is_read: boolean;
+  created_at: string;
+  read_at: string | null;
+};
+
+export type NotificationInbox = {
+  notifications: CollaborationNotification[];
+  unread_count: number;
+  offset: number;
+  limit: number;
+  has_more: boolean;
+};
+
 export type ActivityRecommendation = {
   activity_id: string;
   activity_name: string;
@@ -110,6 +133,77 @@ export type ActivityRecommendation = {
   reasons: string[];
   score_version: number;
   is_neutral: boolean;
+};
+
+export type PlanningReasonCode =
+  | "itinerary_empty"
+  | "itinerary_item_unscheduled"
+  | "date_conflict"
+  | "budget_conflict"
+  | "strong_candidate_not_in_itinerary"
+  | "limited_vote_signal"
+  | "unresolved_suggestion"
+  | "ready_to_finalize";
+
+export type PlanningIssue = {
+  reason_code: PlanningReasonCode;
+  entity_ids: string[];
+  label: string;
+};
+
+export type PlanningAction = PlanningIssue & {
+  action_type: "add_to_itinerary" | "schedule" | "review_dates" | "review_budget" | "review_votes" | "review_suggestions" | "finalize_plan";
+};
+
+export type PlanningStatus = {
+  overall_status: "needs_attention" | "ready" | "finalized";
+  readiness_state: "not_ready" | "ready" | "finalized";
+  plan_version: number;
+  planning_version: number;
+  blockers: PlanningIssue[];
+  warnings: PlanningIssue[];
+  suggested_actions: PlanningAction[];
+};
+
+export type ItineraryDraftItem = {
+  activity_id: string;
+  title: string;
+  proposed_start_at: string | null;
+  duration_minutes: number | null;
+  estimated_cost_cents: number | null;
+  recommendation_rank: number;
+  reason_codes: string[];
+};
+
+export type ItineraryDraft = {
+  plan_id: string;
+  base_planning_version: number;
+  days: Array<{ date: string | null; items: ItineraryDraftItem[] }>;
+  warnings: string[];
+  generated_at: string;
+};
+
+export type PlanningRun = {
+  id: string;
+  plan_id: string;
+  triggered_by_user_id: string;
+  run_type: string;
+  status: "pending" | "running" | "completed" | "failed";
+  draft_status: "fresh" | "stale" | "invalid";
+  base_plan_version: number;
+  base_planning_version: number;
+  current_planning_version: number;
+  draft: ItineraryDraft | null;
+  validation_errors: string[];
+  created_at: string;
+  completed_at: string | null;
+  expires_at: string | null;
+};
+
+export type ApplyPlanningRunResult = {
+  run_id: string;
+  applied_item_ids: string[];
+  planning_version: number;
 };
 
 export type PlanDetail = PlanSummary & { activities: ActivitySummary[] };

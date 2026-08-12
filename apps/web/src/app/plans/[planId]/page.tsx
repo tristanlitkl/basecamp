@@ -14,6 +14,7 @@ import {
   createActivity,
   createActivitySuggestion,
   createComment,
+  createPlanningRun,
   createDateSuggestion,
   createExpense,
   createInvite,
@@ -29,6 +30,8 @@ import {
   decideDateSuggestion,
   decidePlanSuggestion,
   getPlanBalances,
+  getPlanningStatus,
+  getPlanningRun,
   getRecommendations,
   isAuthenticationError,
   isPlanMembershipError,
@@ -36,6 +39,8 @@ import {
   patchExpense,
   patchItineraryItem,
   patchPlan,
+  applyPlanningRun,
+  regeneratePlanningRun,
   reorderItineraryItem,
   resyncPlan,
   setPlanLifecycle,
@@ -53,9 +58,10 @@ import { usePlanSocket } from "@/hooks/usePlanSocket";
 import { snapshotToPlanDetail } from "@/hooks/useResyncPlan";
 import { AvailabilityCalendar } from "@/components/plans/availability-calendar";
 import { AdventureBackground } from "@/components/plans/adventure-background";
+import { NotificationBell } from "@/components/plans/notification-bell";
 import { avatarEmoji } from "@/lib/avatar";
 import { sortMembers } from "@/lib/member-directory";
-import type { ActivityRecommendation, ActivitySummary, Expense, PlanBalance, PlanDetail, ResyncSnapshot } from "@/types/api";
+import type { ActivityRecommendation, ActivitySummary, Expense, PlanBalance, PlanDetail, PlanningAction, PlanningRun, PlanningStatus, ResyncSnapshot } from "@/types/api";
 
 type TravelMode = "car" | "plane" | "train" | "bus";
 
@@ -281,6 +287,65 @@ function comparePositionKeys(left: string, right: string) {
   return normalizedLeft === normalizedRight ? 0 : normalizedLeft < normalizedRight ? -1 : 1;
 }
 
+function PlanningStatusCard({ status, onAction }: { status: PlanningStatus; onAction: (action: PlanningAction) => void }) {
+  const attentionCount = status.blockers.length + status.warnings.length;
+  const summary = status.overall_status === "finalized"
+    ? "This plan is finalized."
+    : status.readiness_state === "ready"
+      ? "Plan is ready to finalize."
+      : `${attentionCount} ${attentionCount === 1 ? "thing needs" : "things need"} attention.`;
+  return <section className="card section-card planning-status" aria-labelledby="planning-status-heading">
+    <div className="section-heading"><div><h2 id="planning-status-heading">Planning status</h2><p className="muted small">{summary}</p></div><span className={`badge badge-${status.overall_status}`}>{status.overall_status.replaceAll("_", " ")}</span></div>
+    {status.blockers.length > 0 && <div className="planning-status-group"><strong>Blockers</strong><ul>{status.blockers.map((issue) => <li key={`${issue.reason_code}-${issue.entity_ids.join("-")}`}>{issue.label}</li>)}</ul></div>}
+    {status.warnings.length > 0 && <div className="planning-status-group"><strong>Warnings</strong><ul>{status.warnings.map((issue) => <li key={`${issue.reason_code}-${issue.entity_ids.join("-")}`}>{issue.label}</li>)}</ul></div>}
+    {status.suggested_actions.length > 0 && <div className="planning-status-group"><strong>Next steps</strong><div className="planning-actions">{status.suggested_actions.map((action) => <button className="btn btn-secondary" key={`${action.action_type}-${action.entity_ids.join("-")}`} onClick={() => onAction(action)} type="button">{action.label}</button>)}</div></div>}
+    {status.overall_status !== "finalized" && attentionCount === 0 && <p className="muted small">No unresolved planning signals.</p>}
+  </section>;
+}
+
+function ItineraryDraftCard({ token, planId, planningVersion, canManage, finalized, onApplied, onError }: {
+  token: string; planId: string; planningVersion: number; canManage: boolean; finalized: boolean;
+  onApplied: () => Promise<void>; onError: (error: unknown) => void;
+}) {
+  const [run, setRun] = useState<PlanningRun | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [reviewingStale, setReviewingStale] = useState(false);
+  const stale = run?.draft_status === "stale" || (run?.draft_status === "fresh" && run.base_planning_version !== planningVersion);
+  const request = async (operation: () => Promise<PlanningRun>) => {
+    setLoading(true);
+    try { setRun(await operation()); setReviewingStale(false); }
+    catch (error) { onError(error); }
+    finally { setLoading(false); }
+  };
+  const apply = async () => {
+    if (!run) return;
+    setLoading(true);
+    try {
+      await applyPlanningRun(token, planId, run.id);
+      await onApplied();
+      setRun(await getPlanningRun(token, planId, run.id));
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        try { setRun(await getPlanningRun(token, planId, run.id)); } catch { /* Preserve conflict feedback. */ }
+      }
+      onError(error);
+    } finally { setLoading(false); }
+  };
+  return <section className="card section-card itinerary-draft" aria-labelledby="itinerary-draft-heading">
+    <div className="section-heading"><div><h2 id="itinerary-draft-heading">Itinerary draft</h2><p className="muted small">A deterministic suggested schedule based on saved plan data.</p></div></div>
+    {!canManage && <p className="muted small">An owner or co-owner can generate a draft.</p>}
+    {canManage && !run && <button className="btn" disabled={loading || finalized} onClick={() => void request(() => createPlanningRun(token, planId))} type="button">{loading ? "Generating draft…" : "Generate draft"}</button>}
+    {stale && <div className="notice" role="status"><p>This draft is outdated because the plan changed after generation.</p><div className="cluster"><button className="btn" disabled={loading || finalized} onClick={() => void request(() => regeneratePlanningRun(token, planId, run!.id))} type="button">Regenerate</button><button className="btn btn-secondary" disabled={loading} onClick={() => setReviewingStale(true)} type="button">Review anyway</button></div></div>}
+    {run?.draft_status === "invalid" && <div className="alert" role="alert"><p>This draft could not be validated.</p>{run.validation_errors.map((error) => <p className="small" key={error}>{error}</p>)}<button className="btn btn-secondary" disabled={loading || finalized} onClick={() => void request(() => regeneratePlanningRun(token, planId, run.id))} type="button">Regenerate</button></div>}
+    {run?.draft && (!stale || reviewingStale) && <div className="stack itinerary-draft-preview">
+      {run.draft.days.map((day, dayIndex) => <article className="subcard" key={day.date ?? `unscheduled-${dayIndex}`}><strong>{day.date ?? "Unscheduled within the trip"}</strong><div className="stack">{day.items.map((item) => <div className="split small" key={item.activity_id}><span><strong>{item.title}</strong><br /><span className="muted">Unscheduled time · rank #{item.recommendation_rank}</span></span><span className="muted">{item.reason_codes.join(", ")}</span></div>)}</div></article>)}
+      {run.draft.warnings.map((warning) => <p className="muted small" key={warning}>{warning}</p>)}
+      {!stale && run.draft_status === "fresh" && <div className="cluster"><button className="btn" disabled={loading || finalized || !canManage} onClick={() => void apply()} type="button">Apply draft</button><button className="btn btn-secondary" disabled={loading || finalized || !canManage} onClick={() => void request(() => regeneratePlanningRun(token, planId, run.id))} type="button">Regenerate</button></div>}
+      {stale && <p className="muted small">Review only — stale drafts cannot be applied.</p>}
+    </div>}
+  </section>;
+}
+
 function readableError(value: unknown) {
   if (!(value instanceof ApiError)) return value instanceof Error ? value.message : "Request failed.";
   if (value.status === 403) return "Only the plan owner can do that, or this plan is finalized.";
@@ -305,6 +370,7 @@ export default function PlanPage() {
   const [snapshot, setSnapshot] = useState<ResyncSnapshot | null>(null);
   const [balances, setBalances] = useState<PlanBalance[]>([]);
   const [recommendations, setRecommendations] = useState<ActivityRecommendation[]>([]);
+  const [planningStatus, setPlanningStatus] = useState<PlanningStatus | null>(null);
   const [activityName, setActivityName] = useState("");
   const [activityDescription, setActivityDescription] = useState("");
   const [activityAddress, setActivityAddress] = useState("");
@@ -347,6 +413,7 @@ export default function PlanPage() {
   const [discussionOpen, setDiscussionOpen] = useState<Record<string, boolean>>({});
   const [planSuggestionTitle, setPlanSuggestionTitle] = useState("");
   const [planSuggestionDescription, setPlanSuggestionDescription] = useState("");
+  const [notificationRefreshKey, setNotificationRefreshKey] = useState(0);
 
   const closeScheduleModal = () => {
     setScheduleTarget(null);
@@ -369,6 +436,7 @@ export default function PlanPage() {
     setAuthorizationFailed(false);
     setExpensePayer((current) => current || next.members[0]?.user_id || "");
     setExpenseParticipants((current) => current.length ? current : next.members.map((member) => member.user_id));
+    setNotificationRefreshKey((current) => current + 1);
   };
   const socket = usePlanSocket({
     planId,
@@ -377,6 +445,7 @@ export default function PlanPage() {
       applySnapshot(next);
       if (session?.appJwt) void getPlanBalances(session.appJwt, planId).then(setBalances).catch(() => undefined);
       if (session?.appJwt) void getRecommendations(session.appJwt, planId).then(setRecommendations).catch(() => undefined);
+      if (session?.appJwt) void getPlanningStatus(session.appJwt, planId).then(setPlanningStatus).catch(() => undefined);
     },
     onPlanEvent: async () => {
       // Realtime packets only invalidate local state; REST resync remains authoritative.
@@ -402,14 +471,16 @@ export default function PlanPage() {
   async function load() {
     if (!session?.appJwt) return;
     await syncUser(session.appJwt);
-    const [nextSnapshot, nextBalances, nextRecommendations] = await Promise.all([
+    const [nextSnapshot, nextBalances, nextRecommendations, nextPlanningStatus] = await Promise.all([
       resyncPlan(session.appJwt, planId),
       getPlanBalances(session.appJwt, planId),
-      getRecommendations(session.appJwt, planId)
+      getRecommendations(session.appJwt, planId),
+      getPlanningStatus(session.appJwt, planId)
     ]);
     applySnapshot(nextSnapshot);
     setBalances(nextBalances);
     setRecommendations(nextRecommendations);
+    setPlanningStatus(nextPlanningStatus);
   }
 
   useEffect(() => {
@@ -477,11 +548,42 @@ export default function PlanPage() {
     setEditExpensePayer(expense.paid_by_user_id);
     setEditExpenseParticipants(snapshot.expense_splits.filter((split) => split.expense_id === expense.id).map((split) => split.user_id));
   };
+  const handlePlanningAction = (action: PlanningAction) => {
+    const entityId = action.entity_ids[0];
+    if (action.action_type === "schedule") {
+      const item = snapshot.itinerary_items.find((candidate) => candidate.id === entityId);
+      if (item) {
+        setScheduleTarget({ kind: "existing", itemId: item.id, title: item.title, version: item.version });
+        setScheduleDate("");
+        setScheduleTime("");
+      }
+      return;
+    }
+    if (action.action_type === "add_to_itinerary") {
+      const activity = plan.activities.find((candidate) => candidate.id === entityId);
+      if (activity) openActivitySchedule(activity.id, activity.name);
+      else document.getElementById("itinerary")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (action.action_type === "review_dates") { setDashboardEditor("date"); return; }
+    if (action.action_type === "review_budget") { setDashboardEditor("budget"); return; }
+    if (action.action_type === "review_votes") {
+      document.getElementById("trip-ideas-not-in-itinerary")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (action.action_type === "review_suggestions") {
+      document.getElementById("plan-ideas")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (action.action_type === "finalize_plan" && canManage && !finalized) {
+      void mutate(() => setPlanLifecycle(session.appJwt!, planId, "finalize", plan.version), true);
+    }
+  };
 
   return <main className="app-shell"><AdventureBackground />
     <header className="topbar app-header">
       <div className="header-context"><Link className="brand" href="/dashboard"><span className="brand-mark">B</span> Basecamp</Link><span className="header-divider" /><span className="muted small">Plan workspace</span></div>
-      <div className="user-area"><span className="avatar avatar-small" aria-hidden="true">{avatarEmoji(snapshot.members.find((member) => member.user_id === snapshot.current_user_id)?.avatar_emoji)}</span><span className="user-copy"><strong>{displayMember(snapshot, snapshot.current_user_id)}</strong><span>{plan.role.replace("_", "-")}</span></span><button className="btn btn-quiet" type="button" onClick={() => signOut()}>Sign out</button></div>
+      <div className="user-area"><NotificationBell token={session.appJwt} planId={planId} refreshKey={notificationRefreshKey} /><span className="avatar avatar-small" aria-hidden="true">{avatarEmoji(snapshot.members.find((member) => member.user_id === snapshot.current_user_id)?.avatar_emoji)}</span><span className="user-copy"><strong>{displayMember(snapshot, snapshot.current_user_id)}</strong><span>{plan.role.replace("_", "-")}</span></span><button className="btn btn-quiet" type="button" onClick={() => signOut()}>Sign out</button></div>
     </header>
     <header className="plan-header trip-hero">
       <Link className="breadcrumb" href="/dashboard">← Back to dashboard</Link>
@@ -501,6 +603,8 @@ export default function PlanPage() {
     </section>
     {error && <p role="alert" className="alert">{error}</p>}
     {pending && <p role="status" className="notice">Saving and syncing latest state…</p>}
+    {planningStatus && <PlanningStatusCard status={planningStatus} onAction={handlePlanningAction} />}
+    <ItineraryDraftCard token={session.appJwt!} planId={planId} planningVersion={plan.planning_version} canManage={canManage} finalized={finalized} onApplied={load} onError={(value) => setError(readableError(value))} />
     <section className="summary-grid" aria-label="Plan overview">
       <DashboardTile label="Date window" icon="◷" value={plan.starts_on ? `${readableDate(plan.starts_on)} – ${readableDate(plan.ends_on)}` : "Not set"} onClick={() => setDashboardEditor("date")} />
       <DashboardTile label="Transportation" icon="↝" value={travelModeLabel(plan.travel_mode)} onClick={() => setDashboardEditor("transportation")} />

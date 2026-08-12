@@ -248,7 +248,7 @@ def test_expense_participant_validation_rejects_empty_duplicates_and_non_members
     assert empty.status_code == duplicate.status_code == outsider.status_code == 422
 
 
-def test_votes_do_not_bump_planning_version_but_activity_writes_do() -> None:
+def test_votes_and_activity_writes_bump_planning_version() -> None:
     with client_context() as client:
         jwt, plan_id = create_plan(client, f"owner-{uuid4()}")
         before = client.get(f"/plans/{plan_id}", headers=bearer(jwt)).json()["planning_version"]
@@ -268,7 +268,7 @@ def test_votes_do_not_bump_planning_version_but_activity_writes_do() -> None:
         )
         after_vote = client.get(f"/plans/{plan_id}", headers=bearer(jwt)).json()["planning_version"]
     assert after_create == before + 1
-    assert after_vote == after_create
+    assert after_vote == after_create + 1
 
 
 def test_idempotency_permanent_failure_is_stored_and_replayed() -> None:

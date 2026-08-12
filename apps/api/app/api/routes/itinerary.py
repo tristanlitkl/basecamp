@@ -18,6 +18,7 @@ from app.models.plan import PlanMember
 from app.models.user import User
 from app.services.event_service import append_plan_event, broadcast_committed_plan_event
 from app.services.idempotency_service import claim_operation, complete_operation, fail_operation
+from app.services.notification_service import create_notifications, plan_member_ids
 from app.services.planning_service import bump_planning_version, require_mutable_plan
 from app.services.recommendation_service import recompute_plan_scores
 
@@ -170,6 +171,19 @@ async def create_item(
         client_operation_id=payload.client_operation_id,
         payload_json={"position_key": str(item.position_key)},
     )
+    await create_notifications(
+        session,
+        plan_id=plan_id,
+        recipients=await plan_member_ids(session, plan_id),
+        actor_id=user.id,
+        event_type="itinerary_item.created",
+        entity_type="itinerary_item",
+        entity_id=item.id,
+        title="An activity was added to the itinerary",
+        body=item.title,
+        metadata={"title": item.title},
+        source_key=f"itinerary-created:{item.id}",
+    )
     await session.commit()
     await broadcast_committed_plan_event(event)
     return body
@@ -213,6 +227,20 @@ async def patch_item(
         resource_id=item.id,
         resource_version_after=item.version,
     )
+    if "starts_at" in changes or "ends_at" in changes:
+        await create_notifications(
+            session,
+            plan_id=plan_id,
+            recipients=await plan_member_ids(session, plan_id),
+            actor_id=user.id,
+            event_type="itinerary_item.scheduled_changed",
+            entity_type="itinerary_item",
+            entity_id=item.id,
+            title="An itinerary time changed",
+            body=item.title,
+            metadata={"title": item.title},
+            source_key=f"itinerary-schedule:{item.id}:{item.version}",
+        )
     await session.commit()
     await broadcast_committed_plan_event(event)
     return response(item)
@@ -322,6 +350,19 @@ async def delete_item(
         resource_type="itinerary_item",
         resource_id=item_id,
         resource_version_after=None,
+    )
+    await create_notifications(
+        session,
+        plan_id=plan_id,
+        recipients=await plan_member_ids(session, plan_id),
+        actor_id=user.id,
+        event_type="itinerary_item.deleted",
+        entity_type="itinerary_item",
+        entity_id=item_id,
+        title="An itinerary item was removed",
+        body=item.title,
+        metadata={"title": item.title},
+        source_key=f"itinerary-deleted:{item_id}:{expected_version}",
     )
     await session.commit()
     await broadcast_committed_plan_event(event)

@@ -62,10 +62,10 @@ network dependency beyond Basecamp's own API.
 | 1B | Optimistic concurrency, itinerary ordering, expenses, ledger, lifecycle, and idempotency. |
 | 1C | In-memory realtime collaboration with post-commit invalidations. |
 | 3 | Deterministic activity recommendations from saved planning state. |
+| 4 | Deterministic LangGraph itinerary drafts with persisted snapshots, preview-before-apply, and server-enforced stale-draft protection. |
 | De-scope | Place discovery, route estimates, forecasts, and their supporting application code are removed. Historical database migrations remain immutable. |
 
-Future feature phases beyond Phase 3 are not authorized by this roadmap. Do
-not begin a new feature phase as part of cleanup work.
+Phase 5 and later remain future work. Do not begin them as part of Phase 4.
 
 ## Phase 3 — Deterministic Activity Recommendations
 
@@ -159,6 +159,74 @@ basecamp/
       alembic/versions/
       tests/
 ```
+
+## Phase 4 — Deterministic itinerary drafting
+
+Phase 4 has no provider inputs. The only graph inputs are the authoritative
+plan and membership data already stored by Basecamp: Trip Ideas, Phase 3
+recommendation results, votes as represented by those results, plan budget and
+date window, date availability, current itinerary membership/scheduling,
+activity cost/duration, plan lifecycle state, and current members.
+
+`langgraph_runs` is a persisted history of non-authoritative draft runs. Each
+run records `id`, `plan_id`, `triggered_by_user_id`, `run_type`, `status`,
+`base_plan_version`, `base_planning_version`, `input_json`, `output_json`,
+`validation_errors_json`, `draft_status`, `created_at`, `completed_at`, and
+`expires_at`. It never replaces activities or itinerary rows as the source of
+truth.
+
+The LangGraph nodes are fixed and have no LLM or network call:
+
+1. `load_plan_snapshot`
+2. `normalize_constraints`
+3. `load_ranked_activities`
+4. `select_candidates`
+5. `assign_candidate_days`
+6. `order_itinerary`
+7. `produce_structured_draft`
+8. `validate_draft`
+9. `check_staleness`
+
+The graph consumes JSON-compatible typed data and returns a Pydantic
+`PlanDraft`. It creates no authoritative mutation, plan event, notification,
+WebSocket message, or counter increment. Ranking reuses the Phase 3 scoring
+service; it does not duplicate a score formula. Candidates already in the
+itinerary are preserved rather than drafted again; candidates whose Phase 3
+vote score is at most 250 are excluded as strong negative support. Remaining
+candidates are ranked by Phase 3 rank and use its stable tie-breaks. Days are
+assigned by highest aggregate recorded availability, then calendar date, and
+items are ordered by assigned date, recommendation rank, activity creation
+time, and UUID. With no authoritative time-of-day, `proposed_start_at` is
+`null`; the draft explicitly represents an unscheduled-within-day item rather
+than inventing midnight.
+
+Starting a run snapshots both counters, especially `base_planning_version`.
+Completion reloads the plan: equal means `fresh`, different means `stale`, and
+validation failures are `invalid`. Human edits are never locked. Applying
+reloads and locks the plan transactionally, then again requires a fresh run
+and equal planning version; a mismatch returns server-side HTTP 409 before any
+itinerary row is written. A successful apply inserts all draft itinerary rows,
+bumps `plans.planning_version` exactly once, appends one
+`itinerary_draft.applied` plan event, commits, and then broadcasts one
+non-authoritative invalidation. It never bumps `plans.version`. A run records
+its application so duplicate apply requests return 409 and cannot add rows
+twice.
+
+`GET /plans/{plan_id}/planning-status` remains complementary read-only
+guidance about what needs attention. It is not replaced by a draft.
+
+### Later-phase reconciliation
+
+- Phase 5 may add optional AI prose polish only, with deterministic/no-op
+  fallback. It may never change authoritative structured itinerary state and
+  must not assume place discovery, routes, weather, or any external provider.
+- Phase 6 cleanup may cover expired invites, idempotency records, expired
+  LangGraph runs, future AI summaries, metrics, demo data, architecture docs,
+  upgrade triggers, and opportunistic cleanup. It must not reference deleted
+  `route_cache`, `weather_snapshots`, or external-provider fixtures.
+- Phase 8 retains production OAuth, privacy, terms, support, launch modes,
+  signup/plan-creation throttling, waitlist, and protected admin controls.
+  Place-search throttling is removed because Basecamp has no place search.
 
 ## Definition of done for the current de-scope
 

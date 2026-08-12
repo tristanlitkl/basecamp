@@ -10,6 +10,7 @@ import {
   createActivity,
   createActivitySuggestion,
   createComment,
+  createPlanningRun,
   createDateSuggestion, createPlanSuggestion,
   createCoOwnerRequest, decideCoOwnerRequest,
   createExpense,
@@ -21,11 +22,15 @@ import {
   decideActivitySuggestion, decidePlanSuggestion,
   decideDateSuggestion,
   getPlanBalances,
+  getPlanningStatus,
+  getPlanningRun,
   getRecommendations,
   patchActivity,
   patchExpense,
   patchItineraryItem,
   patchPlan,
+  applyPlanningRun,
+  regeneratePlanningRun,
   reorderItineraryItem,
   removeMember,
   resyncPlan,
@@ -34,7 +39,7 @@ import {
   upsertDateAvailability, voteActivity, voteDateSuggestion
 } from "@/lib/api-client";
 import { usePlanSocket } from "@/hooks/usePlanSocket";
-import type { ResyncSnapshot } from "@/types/api";
+import type { PlanningStatus, ResyncSnapshot } from "@/types/api";
 
 vi.mock("next-auth/react", () => ({
   signIn: vi.fn(),
@@ -46,7 +51,7 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api-client")>();
   return {
     ...actual,
-    syncUser: vi.fn(), resyncPlan: vi.fn(), getPlanBalances: vi.fn(), getRecommendations: vi.fn(),
+    syncUser: vi.fn(), resyncPlan: vi.fn(), getPlanBalances: vi.fn(), getRecommendations: vi.fn(), getPlanningStatus: vi.fn(), createPlanningRun: vi.fn(), getPlanningRun: vi.fn(), regeneratePlanningRun: vi.fn(), applyPlanningRun: vi.fn(),
     createActivity: vi.fn(), patchActivity: vi.fn(), deleteActivity: vi.fn(), voteActivity: vi.fn(),
     createItineraryItem: vi.fn(), patchItineraryItem: vi.fn(), reorderItineraryItem: vi.fn(), deleteItineraryItem: vi.fn(),
     createExpense: vi.fn(), patchExpense: vi.fn(), deleteExpense: vi.fn(),
@@ -75,10 +80,13 @@ function snapshot(role: "owner" | "co_owner" | "member" = "owner", status: "draf
   };
 }
 
-async function renderPlan(next = snapshot(), recommendationRows: Awaited<ReturnType<typeof getRecommendations>> = [{ activity_id: "activity-1", activity_name: "Kayaking", rank: 1, total_score: 875, vote_score: 1000, budget_score: 1000, preference_score: 500, schedule_fit_score: 500, reasons: ["Strong group support", "Fits the current budget", "Schedule details unavailable", "No stored preferences yet"], score_version: 1, is_neutral: false }]) {
+const defaultPlanningStatus: PlanningStatus = { overall_status: "needs_attention", readiness_state: "not_ready", plan_version: 4, planning_version: 8, blockers: [{ reason_code: "itinerary_item_unscheduled", entity_ids: ["item-1"], label: "Schedule First" }], warnings: [{ reason_code: "strong_candidate_not_in_itinerary", entity_ids: ["activity-1"], label: "Add Kayaking to itinerary" }], suggested_actions: [{ action_type: "schedule", reason_code: "itinerary_item_unscheduled", entity_ids: ["item-1"], label: "Schedule First" }, { action_type: "add_to_itinerary", reason_code: "strong_candidate_not_in_itinerary", entity_ids: ["activity-1"], label: "Add Kayaking to itinerary" }] };
+
+async function renderPlan(next = snapshot(), recommendationRows: Awaited<ReturnType<typeof getRecommendations>> = [{ activity_id: "activity-1", activity_name: "Kayaking", rank: 1, total_score: 875, vote_score: 1000, budget_score: 1000, preference_score: 500, schedule_fit_score: 500, reasons: ["Strong group support", "Fits the current budget", "Schedule details unavailable", "No stored preferences yet"], score_version: 1, is_neutral: false }], status: PlanningStatus = defaultPlanningStatus) {
   vi.mocked(resyncPlan).mockResolvedValue(next);
   vi.mocked(getPlanBalances).mockResolvedValue([{ user_id: "user-1", balance_cents: 500 }, { user_id: "user-2", balance_cents: -500 }]);
   vi.mocked(getRecommendations).mockResolvedValue(recommendationRows);
+  vi.mocked(getPlanningStatus).mockResolvedValue(status);
   render(<PlanPage />);
   await screen.findByRole("heading", { name: "Beach day" });
 }
@@ -125,6 +133,44 @@ describe("Phase 1B.5 planning UI", () => {
     expect(getRecommendations).toHaveBeenCalledWith("app-jwt", "plan-1");
     fireEvent.click(screen.getByRole("button", { name: "Vote yes" }));
     await waitFor(() => expect(getRecommendations).toHaveBeenCalledTimes(2));
+  });
+
+  it("renders planning status and routes its schedule action into the existing scheduling flow", async () => {
+    await renderPlan();
+    expect(screen.getByRole("heading", { name: "Planning status" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Schedule First" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Add Kayaking to itinerary" })).toBeTruthy();
+    expect(getPlanningStatus).toHaveBeenCalledWith("app-jwt", "plan-1");
+    fireEvent.click(screen.getAllByRole("button", { name: "Schedule First" })[0]);
+    expect(await screen.findByRole("dialog", { name: "Schedule activity" })).toBeTruthy();
+  });
+
+  it("generates a fresh itinerary draft and keeps a stale review read-only", async () => {
+    const fresh = { id: "run-1", plan_id: "plan-1", triggered_by_user_id: "user-1", run_type: "itinerary_draft", status: "completed" as const, draft_status: "fresh" as const, base_plan_version: 4, base_planning_version: 8, current_planning_version: 8, draft: { plan_id: "plan-1", base_planning_version: 8, generated_at: "2026-08-01T00:00:00Z", warnings: [], days: [{ date: "2026-08-01", items: [{ activity_id: "activity-1", title: "Kayaking", proposed_start_at: null, duration_minutes: 90, estimated_cost_cents: 2500, recommendation_rank: 1, reason_codes: ["recommendation_ranked"] }] }] }, validation_errors: [], created_at: "2026-08-01T00:00:00Z", completed_at: "2026-08-01T00:00:00Z", expires_at: null };
+    vi.mocked(createPlanningRun).mockResolvedValue(fresh);
+    await renderPlan();
+    fireEvent.click(screen.getByRole("button", { name: "Generate draft" }));
+    await waitFor(() => expect(createPlanningRun).toHaveBeenCalledWith("app-jwt", "plan-1"));
+    await waitFor(() => expect(screen.getAllByText("Kayaking").length).toBeGreaterThan(2));
+    expect(screen.getByRole("button", { name: "Apply draft" })).toBeTruthy();
+
+    vi.mocked(regeneratePlanningRun).mockResolvedValue({ ...fresh, draft_status: "stale", current_planning_version: 9 });
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate" }));
+    await waitFor(() => expect(regeneratePlanningRun).toHaveBeenCalledWith("app-jwt", "plan-1", "run-1"));
+    expect(await screen.findByText(/outdated because the plan changed/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Apply draft" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Review anyway" })).toBeTruthy();
+  });
+
+  it("renders ready and finalized planning-status states without fabricated issues", async () => {
+    await renderPlan(snapshot(), undefined, { overall_status: "ready", readiness_state: "ready", plan_version: 4, planning_version: 8, blockers: [], warnings: [], suggested_actions: [{ action_type: "finalize_plan", reason_code: "ready_to_finalize", entity_ids: ["plan-1"], label: "Plan appears ready to finalize" }] });
+    expect(screen.getByText("Plan is ready to finalize.")).toBeTruthy();
+    expect(screen.getByText("No unresolved planning signals.")).toBeTruthy();
+    cleanup();
+    await renderPlan(snapshot("owner", "finalized"), undefined, { overall_status: "finalized", readiness_state: "finalized", plan_version: 4, planning_version: 8, blockers: [], warnings: [], suggested_actions: [] });
+    expect(screen.getByText("This plan is finalized.")).toBeTruthy();
+    expect(screen.queryByText("Blockers")).toBeNull();
+    expect(screen.queryByText("Warnings")).toBeNull();
   });
 
   it("formats recommendation scores and keeps the authoritative ranking order", async () => {

@@ -11,7 +11,8 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_plan_member, require_plan_owner
-from app.db.base import get_session
+from app.config import get_settings
+from app.db.base import AsyncSessionLocal, get_session
 from app.models.activity import Activity
 from app.models.coordination import ActivityComment, ActivitySuggestion, CoOwnerRequest
 from app.models.event import PlanEvent
@@ -27,9 +28,12 @@ from app.models.plan import (
     PlanSuggestion,
 )
 from app.models.user import User
+from app.services.cleanup_service import opportunistic_cleanup
+from app.services.metrics_service import metrics
 from app.models.vote import ActivityVote
 from app.services.event_service import append_plan_event, broadcast_committed_plan_event
 from app.services.planning_service import bump_planning_version, require_mutable_plan
+from app.services.notification_service import create_notifications, plan_member_ids
 from app.services.recommendation_service import recompute_plan_scores
 
 router = APIRouter(tags=["plans"])
@@ -347,6 +351,17 @@ async def set_plan_lifecycle(
         resource_id=plan_id,
         resource_version_after=plan.version,
     )
+    await create_notifications(
+        session,
+        plan_id=plan_id,
+        recipients=await plan_member_ids(session, plan_id),
+        actor_id=membership.user_id,
+        event_type=f"plan.{target_status}",
+        entity_type="plan",
+        entity_id=plan_id,
+        title="The plan was finalized" if target_status == "finalized" else "The plan was reopened",
+        source_key=f"plan-lifecycle:{plan_id}:{plan.version}",
+    )
     await session.commit()
     await broadcast_committed_plan_event(event)
     return serialize_plan(plan, membership.role)
@@ -437,6 +452,10 @@ async def resync_plan(
     membership: PlanMember = Depends(require_plan_member),
     session: AsyncSession = Depends(get_session),
 ) -> ResyncSnapshot:
+    metrics.increment("resync_requests")
+    # This authenticated, already database-backed path schedules at most one low-priority
+    # cleanup attempt per configured interval. The request never awaits cleanup.
+    await opportunistic_cleanup.trigger(AsyncSessionLocal, get_settings())
     result = await session.execute(select(Plan).where(Plan.id == plan_id))
     plan = result.scalar_one_or_none()
     if plan is None:

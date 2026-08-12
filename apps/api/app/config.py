@@ -14,6 +14,19 @@ class Settings(BaseSettings):
     # alias. Restrict this to this project's team-scoped hostname rather than
     # allowing arbitrary ``*.vercel.app`` origins.
     cors_allowed_origin_regex: str | None = r"https://basecamp(?:-[a-z0-9]+)?-trees6\.vercel\.app"
+    # Application administration is deliberately independent from plan roles.
+    admin_emails: str = ""
+    cleanup_enabled: bool = True
+    # Off by default so test/import and reload processes do not grow schedulers.
+    cleanup_scheduler_enabled: bool = False
+    cleanup_interval_minutes: int = 30
+    cleanup_batch_size: int = 100
+
+    @property
+    def admin_email_set(self) -> frozenset[str]:
+        return frozenset(
+            email.strip().lower() for email in self.admin_emails.split(",") if email.strip()
+        )
 
     @property
     def cors_origins(self) -> list[str]:

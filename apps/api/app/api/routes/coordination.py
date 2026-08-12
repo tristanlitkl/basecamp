@@ -33,6 +33,7 @@ from app.services.event_service import append_plan_event, broadcast_committed_pl
 from app.services.planning_service import bump_planning_version, require_mutable_plan
 from app.services.recommendation_service import recompute_plan_scores
 from app.services.idempotency_service import claim_operation, complete_operation, fail_operation
+from app.services.notification_service import create_notifications, owner_ids
 
 router = APIRouter(tags=["coordination"])
 
@@ -264,6 +265,31 @@ async def change_member_role(
                 client_operation_id=payload.client_operation_id,
             )
         )
+    await create_notifications(
+        session,
+        plan_id=plan_id,
+        recipients=[target.user_id],
+        actor_id=actor.user_id,
+        event_type="member.promoted" if payload.role == "co_owner" else "member.demoted",
+        entity_type="plan_member",
+        entity_id=target.id,
+        title="You were promoted to co-owner"
+        if payload.role == "co_owner"
+        else "You were changed to member",
+        source_key=f"member-role:{target.id}:{payload.role}:{payload.client_operation_id or target.id}",
+    )
+    for request in resolved_requests:
+        await create_notifications(
+            session,
+            plan_id=plan_id,
+            recipients=[request.requester_user_id],
+            actor_id=actor.user_id,
+            event_type="co_owner_request.approved",
+            entity_type="co_owner_request",
+            entity_id=request.id,
+            title="Your co-owner request was accepted",
+            source_key=f"co-owner-approved:{request.id}:{request.version}",
+        )
     await session.commit()
     await broadcast_committed_plan_event(event)
     for request_event in request_events:
@@ -331,6 +357,17 @@ async def remove_member(
         resource_id=target_id,
         resource_version_after=None,
         client_operation_id=client_operation_id,
+    )
+    await create_notifications(
+        session,
+        plan_id=plan_id,
+        recipients=[target_user_id],
+        actor_id=actor.user_id,
+        event_type="member.removed",
+        entity_type="plan_member",
+        entity_id=target_id,
+        title="You were removed from the plan",
+        source_key=f"member-removed:{target_id}:{client_operation_id or target_id}",
     )
     await session.commit()
     await connection_manager.disconnect_user(
@@ -410,6 +447,17 @@ async def create_co_owner_request(
         resource_id=request.id,
         resource_version_after=request.version,
         client_operation_id=payload.client_operation_id,
+    )
+    await create_notifications(
+        session,
+        plan_id=plan_id,
+        recipients=await owner_ids(session, plan_id),
+        actor_id=user.id,
+        event_type="co_owner_request.created",
+        entity_type="co_owner_request",
+        entity_id=request.id,
+        title="A member requested co-owner access",
+        source_key=f"co-owner-created:{request.id}",
     )
     await session.commit()
     await broadcast_committed_plan_event(event)
@@ -552,6 +600,19 @@ async def decide_co_owner_request(
             resource_version_after=None,
             client_operation_id=payload.client_operation_id,
         )
+    await create_notifications(
+        session,
+        plan_id=plan_id,
+        recipients=[request.requester_user_id],
+        actor_id=user.id,
+        event_type=f"co_owner_request.{request.status}",
+        entity_type="co_owner_request",
+        entity_id=request.id,
+        title="Your co-owner request was accepted"
+        if decision == "approve"
+        else "Your co-owner request was rejected",
+        source_key=f"co-owner-{request.status}:{request.id}:{request.version}",
+    )
     await session.commit()
     await broadcast_committed_plan_event(event)
     if role_event is not None:
@@ -855,6 +916,19 @@ async def decide_suggestion(
         resource_version_after=None,
         client_operation_id=payload.client_operation_id,
     )
+    await create_notifications(
+        session,
+        plan_id=plan_id,
+        recipients=[suggestion.author_id],
+        actor_id=user.id,
+        event_type=f"activity_suggestion.{decision}",
+        entity_type="activity_suggestion",
+        entity_id=suggestion.id,
+        title="Your activity suggestion was accepted"
+        if decision == "accepted"
+        else "Your activity suggestion was dismissed",
+        source_key=f"activity-suggestion-{decision}:{suggestion.id}",
+    )
     await session.commit()
     await broadcast_committed_plan_event(event)
     return body
@@ -1055,6 +1129,19 @@ async def decide_date_suggestion(
         resource_id=suggestion.id,
         resource_version_after=None,
         client_operation_id=payload.client_operation_id,
+    )
+    await create_notifications(
+        session,
+        plan_id=plan_id,
+        recipients=[suggestion.suggested_by_user_id],
+        actor_id=user.id,
+        event_type=f"date_suggestion.{decision}",
+        entity_type="date_suggestion",
+        entity_id=suggestion.id,
+        title="Your date suggestion was accepted"
+        if decision == "accepted"
+        else "Your date suggestion was dismissed",
+        source_key=f"date-suggestion-{decision}:{suggestion.id}",
     )
     return body, event
 
@@ -1371,6 +1458,19 @@ async def decide_plan_suggestion(
         resource_id=suggestion.id,
         resource_version_after=None,
         client_operation_id=payload.client_operation_id,
+    )
+    await create_notifications(
+        session,
+        plan_id=plan_id,
+        recipients=[suggestion.suggested_by_user_id],
+        actor_id=user.id,
+        event_type=f"plan_suggestion.{decision}",
+        entity_type="plan_suggestion",
+        entity_id=suggestion.id,
+        title="Your plan suggestion was accepted"
+        if decision == "accepted"
+        else "Your plan suggestion was dismissed",
+        source_key=f"plan-suggestion-{decision}:{suggestion.id}",
     )
     return body, event
 

@@ -11,6 +11,7 @@ from app.db.base import AsyncSessionLocal
 from app.models.plan import PlanMember
 from app.models.user import User
 from app.realtime.connection_manager import connection_manager
+from app.services.metrics_service import metrics
 
 router = APIRouter()
 
@@ -53,6 +54,7 @@ async def plan_socket(websocket: WebSocket, plan_id: UUID) -> None:
             return
 
     connection = await connection_manager.connect(websocket, user_id=user.id, plan_id=plan_id)
+    metrics.increment("websocket_connects")
 
     try:
         while True:
@@ -62,3 +64,4 @@ async def plan_socket(websocket: WebSocket, plan_id: UUID) -> None:
         pass
     finally:
         await connection_manager.disconnect(plan_id, connection)
+        metrics.increment("websocket_disconnects")

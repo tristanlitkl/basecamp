@@ -209,7 +209,7 @@ def test_recompute_after_mutation_is_transactional_and_does_not_bump_versions() 
     before_activity = next(item for item in before["activities"] if item["id"] == activity_id)
     after_activity = next(item for item in after["activities"] if item["id"] == activity_id)
     assert after["plan"]["version"] == before["plan"]["version"]
-    assert after["plan"]["planning_version"] == before["plan"]["planning_version"]
+    assert after["plan"]["planning_version"] == before["plan"]["planning_version"] + 1
     assert after_activity["version"] == before_activity["version"]
     assert rows[0]["vote_score"] == 1000
 

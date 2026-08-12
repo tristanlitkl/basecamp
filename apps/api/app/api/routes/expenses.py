@@ -16,6 +16,7 @@ from app.models.user import User
 from app.services.event_service import append_plan_event, broadcast_committed_plan_event
 from app.services.idempotency_service import claim_operation, complete_operation, fail_operation
 from app.services.ledger_service import plan_balances, reverse_expense_ledger, write_expense_ledger
+from app.services.notification_service import create_notifications
 from app.services.planning_service import require_mutable_plan
 
 router = APIRouter(tags=["expenses"])
@@ -194,6 +195,19 @@ async def create_expense(
                 resource_version_after=expense.version,
                 client_operation_id=payload.client_operation_id,
             )
+            await create_notifications(
+                session,
+                plan_id=plan_id,
+                recipients=[participant for participant, _ in splits] + [expense.paid_by_user_id],
+                actor_id=user.id,
+                event_type="expense.created",
+                entity_type="expense",
+                entity_id=expense.id,
+                title="An expense affects you",
+                body=expense.description,
+                metadata={"description": expense.description, "amount_cents": expense.amount_cents},
+                source_key=f"expense-created:{expense.id}",
+            )
     except (HTTPException, ValueError) as error:
         code = (
             error.status_code
@@ -244,6 +258,15 @@ async def patch_expense(
                     status_code=422, detail={"error": "expense_payer_not_participant"}
                 )
             splits = equal_splits(payload.amount_cents, participants)
+            previous_participants = (
+                (
+                    await session.execute(
+                        select(ExpenseSplit.user_id).where(ExpenseSplit.expense_id == expense_id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
             result = await session.execute(
                 update(Expense)
                 .where(
@@ -289,6 +312,21 @@ async def patch_expense(
                 resource_type="expense",
                 resource_id=expense_id,
                 resource_version_after=expense.version,
+            )
+            await create_notifications(
+                session,
+                plan_id=plan_id,
+                recipients=previous_participants
+                + [participant for participant, _ in splits]
+                + [expense.paid_by_user_id],
+                actor_id=user.id,
+                event_type="expense.corrected",
+                entity_type="expense",
+                entity_id=expense.id,
+                title="An expense affecting you was corrected",
+                body=expense.description,
+                metadata={"description": expense.description, "amount_cents": expense.amount_cents},
+                source_key=f"expense-corrected:{expense.id}:{expense.version}",
             )
     except (HTTPException, ValueError) as error:
         code = (
@@ -347,6 +385,15 @@ async def delete_expense(
             expense = result.scalar_one_or_none()
             if expense is None:
                 raise HTTPException(status_code=409, detail={"error": "version_conflict"})
+            affected_ids = (
+                (
+                    await session.execute(
+                        select(ExpenseSplit.user_id).where(ExpenseSplit.expense_id == expense_id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
             await reverse_expense_ledger(session, expense_id, f"expense:{expense_id}:reversal")
             await complete_operation(
                 session,
@@ -363,6 +410,19 @@ async def delete_expense(
                 resource_type="expense",
                 resource_id=expense_id,
                 resource_version_after=expense.version,
+            )
+            await create_notifications(
+                session,
+                plan_id=plan_id,
+                recipients=affected_ids + [expense.paid_by_user_id],
+                actor_id=user.id,
+                event_type="expense.reversed",
+                entity_type="expense",
+                entity_id=expense.id,
+                title="An expense affecting you was reversed",
+                body=expense.description,
+                metadata={"description": expense.description, "amount_cents": expense.amount_cents},
+                source_key=f"expense-reversed:{expense.id}:{expense.version}",
             )
     except (HTTPException, ValueError) as error:
         code = (

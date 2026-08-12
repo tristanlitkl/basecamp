@@ -7,6 +7,8 @@ from app.models.invite import PlanInvite
 from app.models.idempotency import IdempotencyRecord
 from app.models.itinerary import ItineraryItem
 from app.models.ledger import LedgerEntry
+from app.models.langgraph_run import LangGraphRun
+from app.models.notification import Notification
 from app.models.recommendation import ActivityScore
 from app.models.event import PlanEvent
 from app.models.plan import (
@@ -32,6 +34,8 @@ __all__ = [
     "ItineraryItem",
     "IdempotencyRecord",
     "LedgerEntry",
+    "LangGraphRun",
+    "Notification",
     "Plan",
     "PlanDateAvailability",
     "PlanDateSuggestion",

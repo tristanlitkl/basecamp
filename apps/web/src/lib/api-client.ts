@@ -3,6 +3,7 @@ import { getSession } from "next-auth/react";
 import { apiBaseUrl } from "@/lib/env";
 import type {
   ActivitySummary,
+  CollaborationNotification,
   ActivityRecommendation,
   CreateActivityInput,
   Expense,
@@ -10,7 +11,10 @@ import type {
   ItineraryItem,
   ItineraryMutationResponse,
   PlanDetail,
+  NotificationInbox,
   PlanBalance,
+  PlanningRun,
+  PlanningStatus,
   PlanSummary,
   ResyncSnapshot,
   User
@@ -121,6 +125,39 @@ export function getPlanBalances(token: string, planId: string): Promise<PlanBala
 
 export function getRecommendations(token: string, planId: string): Promise<ActivityRecommendation[]> {
   return apiFetch<ActivityRecommendation[]>(token, `/plans/${planId}/recommendations`);
+}
+
+export function getPlanningStatus(token: string, planId: string): Promise<PlanningStatus> {
+  return apiFetch<PlanningStatus>(token, `/plans/${planId}/planning-status`);
+}
+
+export function createPlanningRun(token: string, planId: string): Promise<PlanningRun> {
+  return apiFetch<PlanningRun>(token, `/plans/${planId}/planning-runs`, { method: "POST" });
+}
+
+export function getPlanningRun(token: string, planId: string, runId: string): Promise<PlanningRun> {
+  return apiFetch<PlanningRun>(token, `/plans/${planId}/planning-runs/${runId}`);
+}
+
+export function regeneratePlanningRun(token: string, planId: string, runId: string): Promise<PlanningRun> {
+  return apiFetch<PlanningRun>(token, `/plans/${planId}/planning-runs/${runId}/regenerate`, { method: "POST" });
+}
+
+export function applyPlanningRun(token: string, planId: string, runId: string): Promise<{ run_id: string; applied_item_ids: string[]; planning_version: number }> {
+  return apiFetch(token, `/plans/${planId}/planning-runs/${runId}/apply`, { method: "POST" });
+}
+
+export function getNotifications(token: string, planId?: string): Promise<NotificationInbox> {
+  const query = planId ? `?plan_id=${encodeURIComponent(planId)}` : "";
+  return apiFetch<NotificationInbox>(token, `/notifications${query}`);
+}
+
+export function markNotificationRead(token: string, notificationId: string): Promise<CollaborationNotification> {
+  return apiFetch<CollaborationNotification>(token, `/notifications/${notificationId}/read`, { method: "POST" });
+}
+
+export function markAllNotificationsRead(token: string, planId?: string): Promise<{ marked_read: number }> {
+  return apiFetch(token, "/notifications/read-all", { method: "POST", body: planId ? { plan_id: planId } : {} });
 }
 
 export function createInvite(token: string, planId: string): Promise<{ token: string; plan_id: string }> {
