@@ -380,6 +380,30 @@ describe("Phase 1B.5 planning UI", () => {
     await waitFor(() => expect(deleteItineraryItem).toHaveBeenCalledWith("app-jwt", "plan-1", "item-2", 2));
   });
 
+  it("renders itinerary descriptions separately from human-readable UTC schedule metadata", async () => {
+    const next = snapshot();
+    next.itinerary_items = [
+      { ...next.itinerary_items[1], activity_id: "activity-1", title: "Kayaking", starts_at: "2026-08-01T09:15:00.000Z" },
+      { ...next.itinerary_items[0], title: "Open afternoon", starts_at: null }
+    ];
+    await renderPlan(next);
+
+    const itinerarySection = screen.getByRole("heading", { name: "Route & itinerary" }).closest("section")!;
+    const scheduledStop = within(itinerarySection).getByText("Kayaking").closest("article")!;
+    expect(within(scheduledStop).getByText("On the bay")).toBeTruthy();
+    expect(within(scheduledStop).getByText("9:15 AM")).toBeTruthy();
+    expect(within(scheduledStop).getByText("Sat, Aug 1 · 9:15 AM")).toBeTruthy();
+    expect(within(scheduledStop).queryByText(/Scheduled 2026-08-01/)).toBeNull();
+
+    const unscheduledStop = within(itinerarySection).getByText("Open afternoon").closest("article")!;
+    expect(within(unscheduledStop).getByText("Time TBD")).toBeTruthy();
+    expect(within(unscheduledStop).getByText("No description")).toBeTruthy();
+    expect(within(unscheduledStop).getByRole("button", { name: "Schedule" })).toBeTruthy();
+    expect(itinerarySection.querySelector(".itinerary-composer")).toBeTruthy();
+    expect(itinerarySection.querySelector(".itinerary-row.is-scheduled")).toBeTruthy();
+    expect(itinerarySection.querySelector(".itinerary-row.is-unscheduled")).toBeTruthy();
+  });
+
   it("creates, edits, and deletes expenses with cents, participants, versions, and idempotency", async () => {
     await renderPlan();
     fireEvent.click(screen.getByRole("button", { name: "+ Add expense" }));
@@ -486,7 +510,7 @@ describe("Phase 1B.5 planning UI", () => {
     cleanup();
     const anonymous = snapshot("member"); anonymous.plan.vote_visibility = "anonymous"; anonymous.activities[0].current_user_vote = "yes"; anonymous.activity_scores["activity-1"].yes = 2; anonymous.votes = [];
     await renderPlan(anonymous);
-    expect(screen.getByRole("heading", { name: "Kayaking" }).closest("article")?.textContent).toContain("Yes 2");
+    expect(screen.getByRole("heading", { name: "Kayaking" }).closest("article")?.textContent).toContain("2 yes");
     expect(screen.getByText(/Votes are anonymous/)).toBeTruthy();
     expect(screen.queryByText(/Member \(yes\)/)).toBeNull();
     expect(screen.getByRole("button", { name: "Vote yes" }).getAttribute("aria-pressed")).toBe("true");
@@ -791,10 +815,10 @@ describe("Phase 1B.5 planning UI", () => {
     await waitFor(() => expect(createItineraryItem).toHaveBeenCalledWith("app-jwt", "plan-1", { title: "Sunset walk", starts_at: "2026-08-01T18:30:00.000Z", client_operation_id: "operation-id" }));
   });
 
-  it("uses the red question-mark Maybe icon without losing the accessible label", async () => {
+  it("uses the compact question-mark Maybe control without losing the accessible label", async () => {
     await renderPlan();
     const maybe = screen.getByRole("button", { name: "Vote maybe" });
-    expect(maybe.textContent).toContain("❓");
+    expect(maybe.textContent).toContain("?");
     expect(maybe.textContent).toContain("Maybe");
   });
 
@@ -891,7 +915,7 @@ describe("Phase 1B.5 planning UI", () => {
     await renderPlan(owner);
     expect(screen.getByRole("button", { name: "Vote yes" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("button", { name: "Vote no" }).getAttribute("aria-pressed")).toBe("false");
-    expect(screen.getByText("Yes 1 · Maybe 0 · No 1")).toBeTruthy();
+    expect(screen.getByText("1 yes · 0 maybe · 1 no")).toBeTruthy();
 
     const member = structuredClone(owner);
     member.current_user_id = "user-2";
@@ -901,7 +925,7 @@ describe("Phase 1B.5 planning UI", () => {
     await act(async () => { await vi.mocked(usePlanSocket).mock.calls[0][0].onPlanEvent?.(); });
     await waitFor(() => expect(screen.getByRole("button", { name: "Vote no" }).getAttribute("aria-pressed")).toBe("true"));
     expect(screen.getByRole("button", { name: "Vote yes" }).getAttribute("aria-pressed")).toBe("false");
-    expect(screen.getByText("Yes 1 · Maybe 0 · No 1")).toBeTruthy();
+    expect(screen.getByText("1 yes · 0 maybe · 1 no")).toBeTruthy();
   });
 
   it("opens a focus-managed Trip Members modal with plain emoji, overflow, role actions, confirmation, and request workflows", async () => {

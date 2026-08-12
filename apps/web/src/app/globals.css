@@ -541,25 +541,30 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
 }
 #trip-ideas .activity-card > .split:first-child .cluster > .btn:first-child:hover:not(:disabled) { background: var(--cobalt-strong); }
 #trip-ideas .vote-control {
-  gap: 5px;
-  padding: 4px;
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
   border: 1px solid #dce5f3;
-  border-radius: 12px;
+  border-radius: 999px;
   background: rgb(255 255 255 / 78%);
 }
 #trip-ideas .vote-button {
-  width: 56px;
-  min-height: 52px;
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  min-height: 34px;
+  gap: 4px;
+  padding: 5px 8px;
   border-color: transparent;
-  border-radius: 8px;
+  border-radius: 999px;
   background: transparent;
-  font-size: .66rem;
+  font-size: .7rem;
 }
-#trip-ideas .vote-button > span:first-child { font-size: 1rem; font-weight: 850; }
+#trip-ideas .vote-button > span:first-child { font-size: .9rem; font-weight: 850; }
 #trip-ideas .vote-button:hover:not(:disabled) { border-color: #c4d2ef; background: #f0f4ff; }
-#trip-ideas .vote-button.selected { box-shadow: 0 4px 10px rgb(49 88 232 / 14%); }
-#trip-ideas .vote-button.no.selected { box-shadow: 0 4px 10px rgb(189 51 65 / 12%); }
-#trip-ideas .vote-button.maybe.selected { box-shadow: 0 4px 10px rgb(168 97 5 / 12%); }
+#trip-ideas .vote-button.selected { box-shadow: inset 0 0 0 1px currentColor, 0 3px 8px rgb(49 88 232 / 12%); }
+#trip-ideas .vote-button.no.selected { box-shadow: inset 0 0 0 1px currentColor, 0 3px 8px rgb(189 51 65 / 10%); }
+#trip-ideas .vote-button.maybe.selected { box-shadow: inset 0 0 0 1px currentColor, 0 3px 8px rgb(168 97 5 / 10%); }
 #trip-ideas details {
   margin: 0;
   padding: 14px 20px 18px;
@@ -595,9 +600,9 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
   pointer-events: none;
 }
 #itinerary > * { position: relative; z-index: 1; }
-#itinerary > form.subcard {
+#itinerary > form.itinerary-composer {
   display: grid;
-  grid-template-columns: minmax(180px, 1.3fr) minmax(145px, .8fr) minmax(116px, .62fr) auto;
+  grid-template-columns: auto minmax(180px, 1.3fr) minmax(145px, .8fr) minmax(116px, .62fr) auto;
   align-items: end;
   gap: 12px;
   padding: 15px;
@@ -606,32 +611,62 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
   background: linear-gradient(135deg, #eef4ff, #f9fcff);
   box-shadow: inset 0 1px rgb(255 255 255 / 90%);
 }
-#itinerary > form.subcard .field { min-width: 0; }
-#itinerary > form.subcard .btn { min-height: 42px; white-space: nowrap; }
-#itinerary > form.subcard + .muted {
+#itinerary > form.itinerary-composer .field { min-width: 0; }
+#itinerary > form.itinerary-composer .btn { min-height: 42px; white-space: nowrap; }
+.itinerary-composer-label {
+  display: grid;
+  width: 32px;
+  height: 42px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--cobalt);
+  color: white;
+  font-size: 1.3rem;
+  font-weight: 400;
+}
+#itinerary > .itinerary-composer-note {
   margin: 9px 2px 17px;
   font-size: .76rem;
 }
 #itinerary .timeline {
   display: grid;
-  gap: 12px;
+  gap: 14px;
   padding: 4px 0 2px;
 }
 #itinerary .timeline::before {
   top: 22px;
   bottom: 22px;
-  left: 20px;
+  left: 104px;
   width: 2px;
   border-radius: 2px;
   background: linear-gradient(var(--cobalt), var(--cyan), #c8d9f4);
 }
 #itinerary .itinerary-row {
-  grid-template-columns: 44px minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: 88px 20px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
   padding: 0;
   border: 0;
 }
-#itinerary .itinerary-row > div {
+#itinerary .itinerary-time {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+  padding-top: 15px;
+  color: var(--ink-900);
+  font-size: .8rem;
+  font-weight: 830;
+  line-height: 1.15;
+  text-align: right;
+}
+#itinerary .itinerary-time small {
+  max-width: 88px;
+  color: var(--muted);
+  font-size: .65rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+#itinerary .itinerary-row > .itinerary-stop {
   min-width: 0;
   padding: 16px 17px;
   border: 1px solid #dce5f2;
@@ -639,32 +674,51 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
   background: rgb(255 255 255 / 92%);
   box-shadow: 0 6px 16px rgb(24 39 77 / 5%);
 }
-#itinerary .itinerary-row > div > .split:first-child { align-items: flex-start; gap: 14px; }
+#itinerary .itinerary-row.is-unscheduled > .itinerary-stop { background: linear-gradient(145deg, rgb(255 255 255 / 92%), #fbfcff); }
+#itinerary .itinerary-row > .itinerary-stop > .split:first-child { align-items: flex-start; gap: 14px; }
 #itinerary .itinerary-row strong { color: var(--ink-950); font-size: 1rem; }
 #itinerary .step {
-  width: 40px;
-  height: 40px;
+  width: 16px;
+  height: 16px;
+  margin-top: 18px;
   border: 3px solid #fff;
   background: linear-gradient(145deg, #dfe9ff, #eef4ff);
   box-shadow: 0 0 0 1px #adc2f5, 0 5px 11px rgb(49 88 232 / 13%);
-  font-size: .82rem;
 }
-#itinerary .itinerary-row p {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  width: fit-content;
-  min-height: 29px;
-  margin: 12px 0 0;
-  padding: 5px 9px;
-  border-radius: 8px;
-  background: #f3f8ff;
-  color: #526988;
+#itinerary .is-unscheduled .step {
+  border-color: #f5f7fb;
+  background: #fff;
+  box-shadow: 0 0 0 1px #b8c3d7;
+}
+#itinerary .itinerary-description {
+  margin: 5px 0 0;
+  color: var(--muted);
   font-size: .75rem;
+  line-height: 1.45;
 }
-#itinerary .itinerary-row p:not(:has(.btn)) { background: #effaf8; color: #317b70; }
-#itinerary .itinerary-row p:has(.btn) { background: #fff8eb; color: #93611a; }
+#itinerary .itinerary-metadata { gap: 5px; margin-top: 10px; }
+#itinerary .itinerary-metadata span {
+  padding-right: 7px;
+  color: #53617b;
+  font-size: .72rem;
+  font-weight: 700;
+}
+#itinerary .itinerary-metadata span + span { border-left: 1px solid #d9e1ee; padding-left: 7px; }
+#itinerary .itinerary-unscheduled {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  color: #836120;
+  font-size: .72rem;
+  font-weight: 750;
+}
+#itinerary .itinerary-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+#itinerary .itinerary-row .itinerary-actions .btn {
+  min-height: 30px;
+  padding: 4px 7px;
+  font-size: .71rem;
+}
 #itinerary .itinerary-row .btn-quiet {
   min-height: 30px;
   padding: 4px 7px;
@@ -674,23 +728,37 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
   color: var(--cobalt-strong);
   font-size: .72rem;
 }
-#itinerary .itinerary-row p .btn-quiet:not(:disabled) {
+#itinerary .itinerary-unscheduled .btn-quiet:not(:disabled) {
   border-color: #afc4ef;
   background: var(--cobalt-soft);
   color: var(--cobalt-strong);
   font-weight: 800;
 }
-#itinerary .itinerary-row .btn-danger { min-height: 32px; padding: 5px 8px; font-size: .73rem; }
-#itinerary .itinerary-row > div > form {
+#itinerary .itinerary-icon-button { width: 30px; padding: 0 !important; font-size: .95rem !important; }
+#itinerary .itinerary-delete {
+  border-color: transparent;
+  background: transparent;
+  color: #a45c66;
+}
+#itinerary .itinerary-delete:hover:not(:disabled) { border-color: #f0c6cc; background: var(--danger-soft); color: var(--danger); }
+#itinerary .itinerary-edit-form {
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px dashed #ccd8e9;
 }
 
 @media (max-width: 760px) {
-  #itinerary > form.subcard { grid-template-columns: 1fr 1fr; }
-  #itinerary > form.subcard > :first-child { grid-column: 1 / -1; }
-  #itinerary > form.subcard .btn { grid-column: 1 / -1; }
+  #itinerary > form.itinerary-composer { grid-template-columns: auto 1fr 1fr; }
+  #itinerary > form.itinerary-composer > :nth-child(2) { grid-column: 2 / -1; }
+  #itinerary > form.itinerary-composer .btn { grid-column: 2 / -1; }
+  #itinerary .timeline::before { left: 76px; }
+  #itinerary .itinerary-row { grid-template-columns: 60px 16px minmax(0, 1fr); gap: 8px; }
+  #itinerary .itinerary-time { padding-top: 13px; font-size: .72rem; }
+  #itinerary .itinerary-time small { display: none; }
+  #itinerary .step { width: 14px; height: 14px; margin-top: 17px; }
+  #itinerary .itinerary-row > .itinerary-stop { padding: 13px; }
+  #itinerary .itinerary-row > .itinerary-stop > .split:first-child { gap: 10px; }
+  #itinerary .itinerary-actions { justify-content: flex-start; }
   #trip-ideas .activity-card > .split:first-child,
   #trip-ideas .activity-card > .split:nth-of-type(2) { align-items: stretch; }
   #trip-ideas .activity-card-actions { justify-content: flex-start; }
