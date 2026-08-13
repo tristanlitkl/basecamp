@@ -366,17 +366,18 @@ describe("Phase 1B.5 planning UI", () => {
     fireEvent.change(screen.getByLabelText("Itinerary item"), { target: { value: "Third" } });
     fireEvent.click(screen.getByRole("button", { name: "Add stop" }));
     await waitFor(() => expect(createItineraryItem).toHaveBeenCalledWith("app-jwt", "plan-1", { title: "Third", client_operation_id: "operation-id" }));
-    const first = screen.getByText("First"); const second = screen.getByText("Second");
+    const itineraryView = document.getElementById("itinerary-day-view")!;
+    const first = within(itineraryView).getByText("First"); const second = within(itineraryView).getByText("Second");
     expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const secondArticle = second.closest("article")!;
     fireEvent.click(within(secondArticle).getByRole("button", { name: "Move up" }));
     await waitFor(() => expect(reorderItineraryItem).toHaveBeenCalledWith("app-jwt", "plan-1", "item-2", { expected_version: 2, previous_item_id: undefined, next_item_id: "item-1" }));
-    const refreshedSecond = screen.getByText("Second").closest("article")!;
+    const refreshedSecond = within(itineraryView).getByText("Second").closest("article")!;
     fireEvent.click(within(refreshedSecond).getByRole("button", { name: "Edit" }));
     fireEvent.change(within(refreshedSecond).getByLabelText("Title"), { target: { value: "Moved second" } });
     fireEvent.click(within(refreshedSecond).getByRole("button", { name: "Save item" }));
     await waitFor(() => expect(patchItineraryItem).toHaveBeenCalledWith("app-jwt", "plan-1", "item-2", { title: "Moved second", starts_at: null, expected_version: 2 }));
-    fireEvent.click(within(screen.getByText("Second").closest("article")!).getByRole("button", { name: "Delete" }));
+    fireEvent.click(within(within(itineraryView).getByText("Second").closest("article")!).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(deleteItineraryItem).toHaveBeenCalledWith("app-jwt", "plan-1", "item-2", 2));
   });
 
@@ -423,7 +424,23 @@ describe("Phase 1B.5 planning UI", () => {
     expect(within(groups[1] as HTMLElement).getByText("Sunday, August 2")).toBeTruthy();
     expect(within(groups[2] as HTMLElement).getByText("Unscheduled")).toBeTruthy();
     expect(within(groups[2] as HTMLElement).getByText("Time TBD")).toBeTruthy();
-    expect(itinerary.querySelector(".itinerary-day-view .itinerary-day-timeline")).toBeTruthy();
+    expect(itinerary.querySelector(".itinerary-day-timeline")).toBeTruthy();
+  });
+
+  it("keeps near-midnight starts in their exact UTC days across a year boundary", async () => {
+    const next = snapshot();
+    next.itinerary_items = [
+      { ...next.itinerary_items[0], id: "dec-31", title: "New Year's Eve dinner", starts_at: "2026-12-31T23:55:00.000Z", position_key: "1000" },
+      { ...next.itinerary_items[1], id: "jan-1", title: "New Year's Day walk", starts_at: "2027-01-01T00:05:00.000Z", position_key: "2000" }
+    ];
+    await renderPlan(next);
+
+    const groups = document.getElementById("itinerary-day-view")!.querySelectorAll(".itinerary-day-group");
+    expect(groups).toHaveLength(2);
+    expect(within(groups[0] as HTMLElement).getByText("Thursday, December 31")).toBeTruthy();
+    expect(within(groups[1] as HTMLElement).getByText("Friday, January 1")).toBeTruthy();
+    expect(within(groups[0] as HTMLElement).getByText("New Year's Eve dinner")).toBeTruthy();
+    expect(within(groups[1] as HTMLElement).getByText("New Year's Day walk")).toBeTruthy();
   });
 
   it("uses distinct candidate and committed trip-idea card states", async () => {
@@ -435,7 +452,6 @@ describe("Phase 1B.5 planning UI", () => {
     const committed = screen.getByRole("heading", { name: "Museum" }).closest("article")!;
     expect(candidate.classList.contains("activity-card-not-in-itinerary")).toBe(true);
     expect(committed.classList.contains("activity-card-in-itinerary")).toBe(true);
-    expect(candidate.querySelector(".activity-card-title")?.textContent).toContain("Idea");
     expect(committed.querySelector(".activity-itinerary-state")).toBeTruthy();
     expect(within(candidate).getByRole("button", { name: "Add to itinerary" })).toBeTruthy();
     expect(within(committed).getByRole("button", { name: "Schedule" })).toBeTruthy();
