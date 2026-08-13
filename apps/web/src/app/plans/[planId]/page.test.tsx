@@ -363,8 +363,8 @@ describe("Phase 1B.5 planning UI", () => {
 
   it("orders itinerary items and sends current versions and neighbor contracts", async () => {
     await renderPlan();
-    fireEvent.change(screen.getByLabelText("Item"), { target: { value: "Third" } });
-    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    fireEvent.change(screen.getByLabelText("Itinerary item"), { target: { value: "Third" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add stop" }));
     await waitFor(() => expect(createItineraryItem).toHaveBeenCalledWith("app-jwt", "plan-1", { title: "Third", client_operation_id: "operation-id" }));
     const first = screen.getByText("First"); const second = screen.getByText("Second");
     expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -402,6 +402,43 @@ describe("Phase 1B.5 planning UI", () => {
     expect(itinerarySection.querySelector(".itinerary-composer")).toBeTruthy();
     expect(itinerarySection.querySelector(".itinerary-row.is-scheduled")).toBeTruthy();
     expect(itinerarySection.querySelector(".itinerary-row.is-unscheduled")).toBeTruthy();
+  });
+
+  it("groups the itinerary by authoritative UTC day and keeps unscheduled stops separate", async () => {
+    const next = snapshot();
+    next.itinerary_items = [
+      { ...next.itinerary_items[1], id: "same-day-late", title: "Late same day", starts_at: "2026-08-01T18:30:00.000Z", position_key: "1000" },
+      { ...next.itinerary_items[0], id: "same-day-early", title: "Early same day", starts_at: "2026-08-01T09:15:00.000Z", position_key: "2000" },
+      { ...next.itinerary_items[0], id: "next-day", title: "Next day", starts_at: "2026-08-02T00:15:00.000Z", position_key: "3000" },
+      { ...next.itinerary_items[1], id: "tbd", title: "TBD stop", starts_at: null, position_key: "4000" }
+    ];
+    await renderPlan(next);
+
+    const itinerary = document.getElementById("itinerary-day-view")!;
+    const groups = itinerary.querySelectorAll(".itinerary-day-group");
+    expect(groups).toHaveLength(3);
+    expect(within(groups[0] as HTMLElement).getByText("Day 1")).toBeTruthy();
+    expect(within(groups[0] as HTMLElement).getByText("Saturday, August 1")).toBeTruthy();
+    expect(within(groups[0] as HTMLElement).getByText("Early same day").compareDocumentPosition(within(groups[0] as HTMLElement).getByText("Late same day")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(groups[1] as HTMLElement).getByText("Sunday, August 2")).toBeTruthy();
+    expect(within(groups[2] as HTMLElement).getByText("Unscheduled")).toBeTruthy();
+    expect(within(groups[2] as HTMLElement).getByText("Time TBD")).toBeTruthy();
+    expect(itinerary.querySelector(".itinerary-day-view .itinerary-day-timeline")).toBeTruthy();
+  });
+
+  it("uses distinct candidate and committed trip-idea card states", async () => {
+    const next = snapshot();
+    next.activities.push({ ...next.activities[0], id: "activity-2", name: "Museum", version: 1 });
+    next.itinerary_items[0] = { ...next.itinerary_items[0], activity_id: "activity-2", title: "Museum" };
+    await renderPlan(next);
+    const candidate = screen.getByRole("heading", { name: "Kayaking" }).closest("article")!;
+    const committed = screen.getByRole("heading", { name: "Museum" }).closest("article")!;
+    expect(candidate.classList.contains("activity-card-not-in-itinerary")).toBe(true);
+    expect(committed.classList.contains("activity-card-in-itinerary")).toBe(true);
+    expect(candidate.querySelector(".activity-card-title")?.textContent).toContain("Idea");
+    expect(committed.querySelector(".activity-itinerary-state")).toBeTruthy();
+    expect(within(candidate).getByRole("button", { name: "Add to itinerary" })).toBeTruthy();
+    expect(within(committed).getByRole("button", { name: "Schedule" })).toBeTruthy();
   });
 
   it("creates, edits, and deletes expenses with cents, participants, versions, and idempotency", async () => {
@@ -808,10 +845,10 @@ describe("Phase 1B.5 planning UI", () => {
 
   it("schedules an itinerary item through the existing idempotent mutation with an explicit UTC date and time", async () => {
     await renderPlan();
-    fireEvent.change(screen.getByLabelText("Item"), { target: { value: "Sunset walk" } });
-    fireEvent.change(screen.getByLabelText("Schedule date"), { target: { value: "2026-08-01" } });
-    fireEvent.change(screen.getByLabelText("Start time"), { target: { value: "18:30" } });
-    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    fireEvent.change(screen.getByLabelText("Itinerary item"), { target: { value: "Sunset walk" } });
+    fireEvent.change(screen.getByLabelText("Itinerary schedule date"), { target: { value: "2026-08-01" } });
+    fireEvent.change(screen.getByLabelText("Itinerary start time"), { target: { value: "18:30" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add stop" }));
     await waitFor(() => expect(createItineraryItem).toHaveBeenCalledWith("app-jwt", "plan-1", { title: "Sunset walk", starts_at: "2026-08-01T18:30:00.000Z", client_operation_id: "operation-id" }));
   });
 
