@@ -671,9 +671,9 @@ export default function PlanPage() {
   };
 
   return <main className="app-shell"><AdventureBackground />
-    <header className="topbar app-header">
-      <div className="header-context"><Link className="brand" href="/dashboard"><span className="brand-mark">B</span> Basecamp</Link><span className="header-divider" /><span className="muted small">Plan workspace</span></div>
-      <div className="user-area"><NotificationBell token={session.appJwt} planId={planId} refreshKey={notificationRefreshKey} /><span className="avatar avatar-small" aria-hidden="true">{avatarEmoji(snapshot.members.find((member) => member.user_id === snapshot.current_user_id)?.avatar_emoji)}</span><span className="user-copy"><strong>{displayMember(snapshot, snapshot.current_user_id)}</strong><span>{plan.role.replace("_", "-")}</span></span><button className="btn btn-quiet" type="button" onClick={() => signOut()}>Sign out</button></div>
+    <header className="topbar app-header" aria-label="Plan workspace header">
+      <div className="header-context"><Link className="brand" href="/dashboard"><span className="brand-mark">B</span> Basecamp</Link><span className="header-divider" /><span className="header-plan-name" title={plan.title}>{plan.title}</span></div>
+      <div className="header-actions"><div className="header-notification-area"><NotificationBell token={session.appJwt} planId={planId} refreshKey={notificationRefreshKey} /></div><div className="user-area"><span className="avatar avatar-small" aria-hidden="true">{avatarEmoji(snapshot.members.find((member) => member.user_id === snapshot.current_user_id)?.avatar_emoji)}</span><span className="user-copy"><strong>{displayMember(snapshot, snapshot.current_user_id)}</strong><span>{plan.role.replace("_", "-")}</span></span><button className="btn btn-quiet" type="button" onClick={() => signOut()}>Sign out</button></div></div>
     </header>
     <header className="plan-header trip-hero">
       <Link className="breadcrumb" href="/dashboard">← Back to dashboard</Link>

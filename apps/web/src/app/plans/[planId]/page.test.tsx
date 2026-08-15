@@ -21,6 +21,7 @@ import {
   deleteItineraryItem,
   decideActivitySuggestion, decidePlanSuggestion,
   decideDateSuggestion,
+  getNotifications,
   getPlanBalances,
   getPlanningStatus,
   getPlanningRun,
@@ -51,7 +52,7 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api-client")>();
   return {
     ...actual,
-    syncUser: vi.fn(), resyncPlan: vi.fn(), getPlanBalances: vi.fn(), getRecommendations: vi.fn(), getPlanningStatus: vi.fn(), createPlanningRun: vi.fn(), getPlanningRun: vi.fn(), regeneratePlanningRun: vi.fn(), applyPlanningRun: vi.fn(),
+    syncUser: vi.fn(), resyncPlan: vi.fn(), getNotifications: vi.fn(), getPlanBalances: vi.fn(), getRecommendations: vi.fn(), getPlanningStatus: vi.fn(), createPlanningRun: vi.fn(), getPlanningRun: vi.fn(), regeneratePlanningRun: vi.fn(), applyPlanningRun: vi.fn(),
     createActivity: vi.fn(), patchActivity: vi.fn(), deleteActivity: vi.fn(), voteActivity: vi.fn(),
     createItineraryItem: vi.fn(), patchItineraryItem: vi.fn(), reorderItineraryItem: vi.fn(), deleteItineraryItem: vi.fn(),
     createExpense: vi.fn(), patchExpense: vi.fn(), deleteExpense: vi.fn(),
@@ -98,6 +99,7 @@ describe("Phase 1B.5 planning UI", () => {
     vi.stubGlobal("confirm", vi.fn(() => true));
     vi.stubGlobal("crypto", { randomUUID: vi.fn(() => "operation-id") });
     vi.mocked(syncUser).mockResolvedValue({ id: "user-1", email: "owner@example.com", display_name: "Owner" });
+    vi.mocked(getNotifications).mockResolvedValue({ notifications: [], unread_count: 0, offset: 0, limit: 25, has_more: false });
     vi.mocked(usePlanSocket).mockReturnValue({ connectionState: "restored", nextRetryMs: null, retry: vi.fn(), denyAuthentication: vi.fn(), denyAuthorization: vi.fn(), setPresenceContext: vi.fn() });
     vi.mocked(createInvite).mockResolvedValue({ token: "invite-token", plan_id: "plan-1" });
   });
@@ -115,6 +117,18 @@ describe("Phase 1B.5 planning UI", () => {
     await waitFor(() => expect(createInvite).toHaveBeenCalledWith("app-jwt", "plan-1"));
     await waitFor(() => expect(resyncPlan).toHaveBeenCalledTimes(2));
     expect(screen.getByText(/invite-token/)).toBeTruthy();
+  });
+
+  it("keeps the single notification bell in the top-level plan header, separate from owner actions", async () => {
+    await renderPlan();
+    const bell = screen.getByRole("button", { name: "Notifications" });
+    const workspaceHeader = document.querySelector("header.app-header");
+
+    expect(workspaceHeader?.contains(bell)).toBe(true);
+    expect(bell.closest(".header-notification-area")).not.toBeNull();
+    expect(bell.closest(".plan-actions")).toBeNull();
+    expect(document.querySelectorAll(".notification-entry")).toHaveLength(1);
+    expect(document.querySelector(".plan-header")?.contains(bell)).toBe(false);
   });
 
   it("renders compact member-scoped presence and contextual editing indicators", async () => {

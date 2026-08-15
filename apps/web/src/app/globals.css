@@ -87,8 +87,11 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .auth-card { width: min(100%, 520px); }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-5); margin-bottom: var(--space-6); }
 .app-header { min-height: 62px; padding: 0 var(--space-1) var(--space-4); border-bottom: 1px solid rgb(197 209 229 / 76%); background: rgb(255 255 255 / 64%); backdrop-filter: blur(7px); }
-.header-context, .user-area, .cluster { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.header-context, .header-actions, .user-area, .cluster { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
 .header-divider { width: 1px; height: 22px; background: var(--line); }
+.header-plan-name { max-width: min(34vw, 360px); overflow: hidden; color: var(--ink-700); font-size: .84rem; font-weight: 760; text-overflow: ellipsis; white-space: nowrap; }
+.header-actions { justify-content: flex-end; }
+.header-notification-area { display: flex; align-items: center; padding-right: var(--space-2); border-right: 1px solid var(--line); }
 .user-copy { display: grid; line-height: 1.25; font-size: .78rem; }
 .user-copy span, .muted { color: var(--muted); }
 .small { font-size: .86rem; }
@@ -168,10 +171,12 @@ fieldset input { width: auto; min-height: auto; }
 .breadcrumb:hover { color: white; }
 
 .notification-entry { position: relative; }
-.notification-bell { position: relative; display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--border); border-radius: 50%; background: white; color: var(--ink-900); cursor: pointer; }
-.notification-bell > span:first-child { font-size: 1.2rem; transform: rotate(45deg); }
-.notification-count { position: absolute; top: -6px; right: -7px; min-width: 17px; padding: 1px 4px; border-radius: 999px; background: var(--cobalt); color: white; font-size: .62rem; font-weight: 800; line-height: 15px; }
-.notification-panel { position: absolute; z-index: 20; top: calc(100% + 8px); right: 0; width: min(380px, calc(100vw - 28px)); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: white; box-shadow: var(--shadow-raised); }
+.notification-bell { position: relative; display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid transparent; border-radius: 11px; background: rgb(49 88 232 / 6%); color: var(--cobalt-strong); cursor: pointer; transition: background var(--transition-fast) var(--ease-out), box-shadow var(--transition-fast) var(--ease-out), transform var(--transition-fast) var(--ease-out); }
+.notification-bell:hover { background: var(--cobalt-soft); box-shadow: inset 0 0 0 1px rgb(49 88 232 / 12%); }
+.notification-bell:active { transform: translateY(1px); }
+.notification-icon { width: 19px; height: 19px; }
+.notification-count { position: absolute; top: -5px; right: -6px; min-width: 17px; padding: 1px 4px; border: 2px solid var(--surface-canvas); border-radius: 999px; background: linear-gradient(135deg, var(--cobalt), var(--cyan)); color: white; font-size: .62rem; font-weight: 850; line-height: 15px; }
+.notification-panel { position: absolute; z-index: 20; top: calc(100% + 8px); right: 0; width: min(380px, calc(100vw - 28px)); max-height: min(480px, calc(100dvh - 92px)); padding: var(--space-3); overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-md); background: white; box-shadow: var(--shadow-raised); }
 .notification-list { max-height: 360px; overflow: auto; }
 .notification-row { display: flex; width: 100%; justify-content: space-between; gap: var(--space-3); padding: 10px 6px; border: 0; border-top: 1px solid var(--border); background: transparent; color: inherit; text-align: left; cursor: pointer; }
 .notification-row.unread { background: var(--cobalt-soft); }
@@ -901,7 +906,10 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
   .app-shell { width: min(100% - 20px, 1240px); padding-top: var(--space-4); }
   .topbar, .plan-title-row, .split { align-items: flex-start; flex-direction: column; }
   .app-header { align-items: center; flex-direction: row; }
-  .header-divider, .header-context > .muted, .user-copy { display: none; }
+  .header-divider, .header-plan-name, .user-copy { display: none; }
+  .header-actions { gap: 6px; }
+  .header-notification-area { padding-right: 6px; }
+  .notification-panel { position: fixed; z-index: 30; top: auto; right: 10px; bottom: max(10px, env(safe-area-inset-bottom)); left: 10px; width: auto; max-height: min(70dvh, 480px); border-radius: var(--radius-lg); }
   .plan-header { padding: var(--space-5); }
   .trip-hero h1 { font-size: clamp(2.25rem, 14vw, 3.7rem); }
   .create-plan, .dashboard-grid, .form-grid, .summary-grid, .journey-sidebar { grid-template-columns: 1fr; }

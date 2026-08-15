@@ -1,4 +1,5 @@
 import React from "react";
+import { readFileSync } from "node:fs";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -67,6 +68,19 @@ describe("NotificationBell", () => {
     api.getNotifications.mockResolvedValue({ notifications: [], unread_count: 0, offset: 0, limit: 25, has_more: false });
     render(<NotificationBell token="jwt" planId="plan" refreshKey={0} />);
     fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
-    await waitFor(() => expect(document.querySelector(".notification-panel")).toBeTruthy());
+    const panel = await screen.findByRole("dialog", { name: "Notifications" });
+    fireEvent.keyDown(panel, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull());
+    const styles = readFileSync("src/app/globals.css", "utf8");
+    expect(styles).toContain(".notification-panel { position: fixed;");
+    expect(styles).toContain("max-height: min(70dvh, 480px);");
+  });
+
+  it("caps large unread badges at 9+ while retaining the exact accessible count", async () => {
+    api.getNotifications.mockResolvedValue({ notifications: [], unread_count: 12, offset: 0, limit: 25, has_more: false });
+    render(<NotificationBell token="jwt" planId="plan" refreshKey={0} />);
+    const bell = await screen.findByRole("button", { name: "Notifications, 12 unread" });
+    expect(bell.textContent).toContain("9+");
+    expect(screen.getByLabelText("12 unread notifications")).toBeTruthy();
   });
 });
