@@ -41,7 +41,12 @@ def test_connection_manager_uses_snapshot_and_evicts_dead_sockets() -> None:
         dead.fail = True
         await manager.broadcast(plan_id, {"type": "plan_event", "event_id": "event"})
         assert dead_connection not in manager.active_rooms[plan_id]
-        assert healthy.messages[-1]["event_sequence"] == 1
+        assert (
+            next(
+                message for message in reversed(healthy.messages) if message["type"] == "plan_event"
+            )["event_sequence"]
+            == 1
+        )
 
         # Concurrent room churn must not mutate the copied broadcast iteration.
         churn = [
@@ -103,6 +108,69 @@ def test_connection_manager_keeps_same_user_sockets_distinct_and_cleans_tasks() 
     asyncio.run(exercise())
 
 
+def test_presence_is_deduplicated_contextual_and_expires_without_plan_events() -> None:
+    async def exercise() -> None:
+        manager = ConnectionManager(presence_ttl_seconds=0.02)
+        plan_id, user_id, other_user_id = uuid4(), uuid4(), uuid4()
+        first_socket, second_socket, other_socket = FakeSocket(), FakeSocket(), FakeSocket()
+        first = await manager.connect(
+            first_socket,
+            user_id=user_id,
+            plan_id=plan_id,
+            display_name="Tristan",
+            avatar_emoji="🧭",
+        )  # type: ignore[arg-type]
+        second = await manager.connect(
+            second_socket,
+            user_id=user_id,
+            plan_id=plan_id,
+            display_name="Tristan",
+            avatar_emoji="🧭",
+        )  # type: ignore[arg-type]
+        await manager.connect(
+            other_socket,
+            user_id=other_user_id,
+            plan_id=plan_id,
+            display_name="Ari",
+            avatar_emoji="🌲",
+        )  # type: ignore[arg-type]
+        latest = other_socket.messages[-1]
+        assert latest["type"] == "presence.snapshot"
+        assert [user["user_id"] for user in latest["users"]].count(str(user_id)) == 1
+
+        await manager.update_presence_context(
+            first,
+            active_context="activity edit",
+            editing_entity_type="activity",
+            editing_entity_id=uuid4(),
+        )
+        assert other_socket.messages[-1]["type"] == "presence.updated"
+        assert other_socket.messages[-1]["users"][0]["active_context"] == "activity edit"
+        assert manager._event_sequences == {}
+
+        await manager.update_presence_context(
+            first,
+            active_context=None,
+            editing_entity_type=None,
+            editing_entity_id=None,
+        )
+        assert other_socket.messages[-1]["type"] == "presence.updated"
+        assert other_socket.messages[-1]["users"][0]["active_context"] is None
+
+        await manager.disconnect(plan_id, first)
+        assert any(user["user_id"] == str(user_id) for user in other_socket.messages[-1]["users"])
+        await manager.disconnect(plan_id, second)
+        assert all(user["user_id"] != str(user_id) for user in other_socket.messages[-1]["users"])
+
+        await asyncio.sleep(0.04)
+        assert plan_id not in manager.active_rooms
+        assert other_socket.closed
+        assert manager._event_sequences == {}
+        assert manager._presence_expiry_tasks == {}
+
+    asyncio.run(exercise())
+
+
 def test_two_members_receive_a_committed_activity_invalidation() -> None:
     with client_context() as client:
         owner_jwt, plan_id = create_plan(client, f"owner-{uuid4()}")
@@ -119,6 +187,9 @@ def test_two_members_receive_a_committed_activity_invalidation() -> None:
             ) as member_socket:
                 assert owner_socket.receive_json() == {"type": "connected"}
                 assert member_socket.receive_json() == {"type": "connected"}
+                assert owner_socket.receive_json()["type"] == "presence.snapshot"
+                assert owner_socket.receive_json()["type"] == "presence.snapshot"
+                assert member_socket.receive_json()["type"] == "presence.snapshot"
                 response = client.post(
                     f"/plans/{plan_id}/activities",
                     json={"name": "Committed hike"},
@@ -159,6 +230,9 @@ def test_removed_member_socket_is_terminal_and_remaining_member_is_notified() ->
             ) as member_socket:
                 assert owner_socket.receive_json() == {"type": "connected"}
                 assert member_socket.receive_json() == {"type": "connected"}
+                assert owner_socket.receive_json()["type"] == "presence.snapshot"
+                assert owner_socket.receive_json()["type"] == "presence.snapshot"
+                assert member_socket.receive_json()["type"] == "presence.snapshot"
                 assert (
                     client.delete(
                         f"/plans/{plan_id}/members/{member_id}", headers=bearer(owner_jwt)
@@ -200,6 +274,7 @@ def test_anonymous_vote_invalidation_contains_no_voter_identity() -> None:
         )
         with client.websocket_connect(f"/ws/plans/{plan_id}?token={owner_jwt}") as owner_socket:
             assert owner_socket.receive_json() == {"type": "connected"}
+            assert owner_socket.receive_json()["type"] == "presence.snapshot"
             assert (
                 client.put(
                     f"/plans/{plan_id}/activities/{activity_id}/vote",

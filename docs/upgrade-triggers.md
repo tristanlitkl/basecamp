@@ -4,7 +4,9 @@ Basecamp begins with simple MVP infrastructure and upgrades only when observed
 needs justify it.
 
 - Add Redis/PubSub only when multiple API instances require cross-instance
-  WebSocket invalidation fanout.
+  WebSocket invalidation fanout. The current presence model is ephemeral and
+  per backend instance, which is sufficient for the single-instance MVP; it
+  needs that same shared fanout before Basecamp runs multiple API instances.
 - Add durable distributed metrics only when process-local, restart-resetting
   counters are insufficient for operations.
 - Add a background queue only when planning or cleanup can no longer safely

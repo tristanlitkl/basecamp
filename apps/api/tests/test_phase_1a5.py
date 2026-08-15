@@ -160,3 +160,6 @@ def test_websocket_valid_member_receives_connected():
         app_jwt, plan_id = create_plan(client, f"owner-{uuid4()}")
         with client.websocket_connect(f"/ws/plans/{plan_id}?token={app_jwt}") as websocket:
             assert websocket.receive_json() == {"type": "connected"}
+            presence = websocket.receive_json()
+            assert presence["type"] == "presence.snapshot"
+            assert len(presence["users"]) == 1

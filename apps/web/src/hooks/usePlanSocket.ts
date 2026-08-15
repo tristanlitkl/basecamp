@@ -20,6 +20,23 @@ import {
 } from "@/lib/websocket-client";
 import type { ResyncSnapshot } from "@/types/api";
 
+export type PresenceContext = {
+  active_context: string;
+  editing_entity_type?: "activity" | "itinerary_item";
+  editing_entity_id?: string;
+};
+
+export type PresenceUser = {
+  user_id: string;
+  display_name: string;
+  avatar_emoji?: string;
+  active_context: string | null;
+  editing_entity_type: "activity" | "itinerary_item" | null;
+  editing_entity_id: string | null;
+};
+
+const PRESENCE_HEARTBEAT_MS = 25_000;
+
 type UsePlanSocketOptions = {
   planId: string;
   token?: string;
@@ -27,6 +44,7 @@ type UsePlanSocketOptions = {
   onPlanEvent?: () => Promise<void> | void;
   onAuthFailure: () => void;
   onAuthorizationFailure?: () => void;
+  onPresence?: (users: PresenceUser[]) => void;
   refreshToken?: () => Promise<string | undefined>;
 };
 
@@ -37,6 +55,7 @@ export function usePlanSocket({
   onPlanEvent,
   onAuthFailure,
   onAuthorizationFailure,
+  onPresence,
   refreshToken = refreshAppJwt
 }: UsePlanSocketOptions) {
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
@@ -45,6 +64,7 @@ export function usePlanSocket({
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handshakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const attemptRef = useRef(0);
   const disposedRef = useRef(false);
   const generationRef = useRef(0);
@@ -55,8 +75,9 @@ export function usePlanSocket({
   const refreshGenerationRef = useRef<number | null>(null);
   const refreshTokenRef = useRef(refreshToken);
   refreshTokenRef.current = refreshToken;
-  const callbacksRef = useRef({ onSnapshot, onPlanEvent, onAuthFailure, onAuthorizationFailure });
-  callbacksRef.current = { onSnapshot, onPlanEvent, onAuthFailure, onAuthorizationFailure };
+  const callbacksRef = useRef({ onSnapshot, onPlanEvent, onAuthFailure, onAuthorizationFailure, onPresence });
+  callbacksRef.current = { onSnapshot, onPlanEvent, onAuthFailure, onAuthorizationFailure, onPresence };
+  const presenceContextRef = useRef<PresenceContext | null>(null);
   const seenEventIdsRef = useRef(new Set<string>());
   const highestEventSequenceRef = useRef(0);
   const eventSyncInFlightRef = useRef(false);
@@ -68,6 +89,20 @@ export function usePlanSocket({
         clearTimeout(timer.current);
         timer.current = null;
       }
+    }
+  }, []);
+
+  const clearHeartbeat = useCallback(() => {
+    if (heartbeatTimerRef.current !== null) {
+      clearInterval(heartbeatTimerRef.current);
+      heartbeatTimerRef.current = null;
+    }
+  }, []);
+
+  const sendPresence = useCallback((payload: Record<string, unknown>) => {
+    const socket = socketRef.current;
+    if (socket?.readyState === WebSocket.OPEN && typeof socket.send === "function") {
+      socket.send(JSON.stringify(payload));
     }
   }, []);
 
@@ -96,6 +131,7 @@ export function usePlanSocket({
     terminalRef.current = true;
     ++generationRef.current;
     clearTimers();
+    clearHeartbeat();
     const socket = socketRef.current;
     socketRef.current = null;
     if (socket) {
@@ -115,6 +151,7 @@ export function usePlanSocket({
     terminalRef.current = true;
     ++generationRef.current;
     clearTimers();
+    clearHeartbeat();
     const socket = socketRef.current;
     socketRef.current = null;
     if (socket) {
@@ -156,6 +193,7 @@ export function usePlanSocket({
   connectRef.current = (manual = false) => {
     if (disposedRef.current || terminalRef.current) return;
     clearTimers();
+    clearHeartbeat();
 
     const currentToken = tokenRef.current;
     if (!currentToken) {
@@ -193,7 +231,7 @@ export function usePlanSocket({
 
     socket.onmessage = async (event) => {
       if (!isCurrent()) return;
-      let message: { type?: string; plan_id?: string; event_id?: string; event_sequence?: number };
+      let message: { type?: string; plan_id?: string; event_id?: string; event_sequence?: number; users?: PresenceUser[] };
       try {
         message = JSON.parse(String(event.data)) as { type?: string };
       } catch {
@@ -217,15 +255,25 @@ export function usePlanSocket({
         queuePlanEventResync();
         return;
       }
+      if ((message.type === "presence.snapshot" || message.type === "presence.updated") && Array.isArray(message.users)) {
+        callbacksRef.current.onPresence?.(message.users);
+        return;
+      }
       if (message.type !== "connected") {
-        // Unknown messages are invalidations too; recover through authoritative REST.
-        queuePlanEventResync();
+        // Ephemeral packets are never authoritative invalidations.
         return;
       }
 
       clearTimers();
       seenEventIdsRef.current.clear();
       highestEventSequenceRef.current = 0;
+      sendPresence({ type: "presence.heartbeat" });
+      clearHeartbeat();
+      heartbeatTimerRef.current = setInterval(
+        () => sendPresence({ type: "presence.heartbeat" }),
+        PRESENCE_HEARTBEAT_MS
+      );
+      if (presenceContextRef.current) sendPresence({ type: "presence.context", ...presenceContextRef.current });
       setConnectionState("syncing");
       try {
         const snapshot = await resyncPlan(currentToken, planId);
@@ -251,6 +299,7 @@ export function usePlanSocket({
       if (!isCurrent()) return;
       socketRef.current = null;
       clearTimers();
+      clearHeartbeat();
 
       if (isAuthenticationFailureClose(event)) {
         await refreshAuthenticationRef.current(generation);
@@ -306,6 +355,7 @@ export function usePlanSocket({
       disposedRef.current = true;
       ++generationRef.current;
       clearTimers();
+      clearHeartbeat();
       const socket = socketRef.current;
       socketRef.current = null;
       if (socket) {
@@ -314,7 +364,7 @@ export function usePlanSocket({
         socket.close();
       }
     };
-  }, [clearTimers, planId, queuePlanEventResync]);
+  }, [clearHeartbeat, clearTimers, planId, queuePlanEventResync]);
 
   useEffect(() => {
     if (token === propTokenRef.current) return;
@@ -327,7 +377,13 @@ export function usePlanSocket({
   }, [token]);
 
   const retry = useCallback(() => connectRef.current(true), []);
+  const setPresenceContext = useCallback((context: PresenceContext | null) => {
+    presenceContextRef.current = context;
+    sendPresence(context
+      ? { type: "presence.context", ...context }
+      : { type: "presence.context", active_context: null });
+  }, [sendPresence]);
   const denyAuthentication = useCallback(() => enterAuthenticationFailedRef.current(), []);
   const denyAuthorization = useCallback(() => enterAuthorizationDeniedRef.current(), []);
-  return { connectionState, nextRetryMs, retry, denyAuthentication, denyAuthorization };
+  return { connectionState, nextRetryMs, retry, denyAuthentication, denyAuthorization, setPresenceContext };
 }

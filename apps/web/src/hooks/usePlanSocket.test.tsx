@@ -237,7 +237,7 @@ describe("usePlanSocket lifecycle", () => {
     await act(async () => FakeWebSocket.instances[1].connected());
     expect(resyncPlan).toHaveBeenCalledOnce();
     expect(result.current.connectionState).toBe("restored");
-    expect(vi.getTimerCount()).toBe(0);
+    expect(vi.getTimerCount()).toBe(1); // Presence heartbeat remains active while connected.
   });
 
   it("stops for authentication and authorization failures", async () => {

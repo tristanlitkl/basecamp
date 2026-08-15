@@ -452,6 +452,29 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
   border-color: #afc5ef;
   box-shadow: 0 14px 30px rgb(35 63 119 / 10%);
 }
+
+/* Ephemeral, authenticated room presence is intentionally compact and never stored. */
+.presence-stack { display: inline-flex; align-items: center; gap: 8px; min-width: 0; color: #dce7ff; font-size: .74rem; font-weight: 760; }
+.presence-avatars { display: inline-flex; align-items: center; padding-left: 3px; }
+.presence-avatar { display: grid; width: 27px; height: 27px; margin-left: -5px; place-items: center; border: 2px solid var(--ink-900); border-radius: 50%; background: #f7fbff; box-shadow: 0 2px 7px rgb(4 13 35 / 24%); color: var(--ink-900); font-size: .78rem; }
+.presence-avatar:first-child { margin-left: 0; }
+.presence-overflow { background: #dce8ff; color: var(--cobalt-strong); font-size: .65rem; font-weight: 850; }
+.presence-stack-compact { gap: 0; }
+.presence-stack-compact .presence-avatar { width: 22px; height: 22px; border-color: white; font-size: .66rem; }
+.editing-presence { display: inline-flex; align-items: center; gap: 4px; color: var(--cobalt-strong); font-size: .67rem; font-weight: 780; white-space: nowrap; }
+.editing-presence .presence-avatar { border-color: #f8fbff; box-shadow: 0 1px 4px rgb(24 39 77 / 16%); }
+.itinerary-title-with-presence { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.idea-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+#trip-ideas-not-in-itinerary .activity-card { background: linear-gradient(145deg, #fff, #f5f8ff); }
+#trip-ideas-not-in-itinerary .activity-itinerary-state { background: #edf3ff; color: var(--cobalt-strong); }
+#trip-ideas-in-itinerary .activity-card { border-left: 4px solid var(--cyan); background: linear-gradient(135deg, #f2fcfb, #fbfeff); box-shadow: 0 10px 24px rgb(16 168 191 / 9%); }
+#trip-ideas-in-itinerary .activity-itinerary-state { background: var(--emerald-soft); color: var(--emerald); }
+
+@media (max-width: 760px) {
+  .presence-label { display: none; }
+  .presence-avatar { width: 24px; height: 24px; }
+  .idea-card-grid { grid-template-columns: 1fr; }
+}
 #trip-ideas .activity-card-not-in-itinerary {
   border-style: dashed;
   background: linear-gradient(145deg, #fff, #f7f9fe);

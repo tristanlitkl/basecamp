@@ -98,7 +98,7 @@ describe("Phase 1B.5 planning UI", () => {
     vi.stubGlobal("confirm", vi.fn(() => true));
     vi.stubGlobal("crypto", { randomUUID: vi.fn(() => "operation-id") });
     vi.mocked(syncUser).mockResolvedValue({ id: "user-1", email: "owner@example.com", display_name: "Owner" });
-    vi.mocked(usePlanSocket).mockReturnValue({ connectionState: "restored", nextRetryMs: null, retry: vi.fn(), denyAuthentication: vi.fn(), denyAuthorization: vi.fn() });
+    vi.mocked(usePlanSocket).mockReturnValue({ connectionState: "restored", nextRetryMs: null, retry: vi.fn(), denyAuthentication: vi.fn(), denyAuthorization: vi.fn(), setPresenceContext: vi.fn() });
     vi.mocked(createInvite).mockResolvedValue({ token: "invite-token", plan_id: "plan-1" });
   });
 
@@ -115,6 +115,19 @@ describe("Phase 1B.5 planning UI", () => {
     await waitFor(() => expect(createInvite).toHaveBeenCalledWith("app-jwt", "plan-1"));
     await waitFor(() => expect(resyncPlan).toHaveBeenCalledTimes(2));
     expect(screen.getByText(/invite-token/)).toBeTruthy();
+  });
+
+  it("renders compact member-scoped presence and contextual editing indicators", async () => {
+    await renderPlan();
+    const socketOptions = vi.mocked(usePlanSocket).mock.calls.at(-1)?.[0];
+    await act(async () => socketOptions?.onPresence?.([
+      { user_id: "user-1", display_name: "Owner", avatar_emoji: "🧭", active_context: null, editing_entity_type: null, editing_entity_id: null },
+      { user_id: "user-2", display_name: "Member", avatar_emoji: "🌲", active_context: "activity edit", editing_entity_type: "activity", editing_entity_id: "activity-1" }
+    ]));
+    expect(screen.getByRole("status", { name: "2 people here" })).toBeTruthy();
+    expect(screen.getByLabelText("Member is editing")).toBeTruthy();
+    await act(async () => socketOptions?.onPresence?.([]));
+    expect(screen.queryByLabelText("Member is editing")).toBeNull();
   });
 
   it("renders deterministic ranked recommendations and refreshes them with the authoritative load", async () => {
@@ -149,17 +162,17 @@ describe("Phase 1B.5 planning UI", () => {
     const fresh = { id: "run-1", plan_id: "plan-1", triggered_by_user_id: "user-1", run_type: "itinerary_draft", status: "completed" as const, draft_status: "fresh" as const, base_plan_version: 4, base_planning_version: 8, current_planning_version: 8, draft: { plan_id: "plan-1", base_planning_version: 8, generated_at: "2026-08-01T00:00:00Z", warnings: [], days: [{ date: "2026-08-01", items: [{ activity_id: "activity-1", title: "Kayaking", proposed_start_at: null, duration_minutes: 90, estimated_cost_cents: 2500, recommendation_rank: 1, reason_codes: ["recommendation_ranked"] }] }] }, validation_errors: [], created_at: "2026-08-01T00:00:00Z", completed_at: "2026-08-01T00:00:00Z", expires_at: null };
     vi.mocked(createPlanningRun).mockResolvedValue(fresh);
     await renderPlan();
-    fireEvent.click(screen.getByRole("button", { name: "Generate draft" }));
+    fireEvent.click(screen.getByRole("button", { name: "Generate suggested itinerary" }));
     await waitFor(() => expect(createPlanningRun).toHaveBeenCalledWith("app-jwt", "plan-1"));
     await waitFor(() => expect(screen.getAllByText("Kayaking").length).toBeGreaterThan(2));
-    expect(screen.getByRole("button", { name: "Apply draft" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Apply suggestion" })).toBeTruthy();
 
     vi.mocked(regeneratePlanningRun).mockResolvedValue({ ...fresh, draft_status: "stale", current_planning_version: 9 });
-    fireEvent.click(screen.getByRole("button", { name: "Regenerate" }));
+    fireEvent.click(screen.getByRole("button", { name: "Try another suggestion" }));
     await waitFor(() => expect(regeneratePlanningRun).toHaveBeenCalledWith("app-jwt", "plan-1", "run-1"));
-    expect(await screen.findByText(/outdated because the plan changed/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Apply draft" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Review anyway" })).toBeTruthy();
+    expect(await screen.findByText(/out of date because the plan changed/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Apply suggestion" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Review old suggestion" })).toBeTruthy();
   });
 
   it("renders ready and finalized planning-status states without fabricated issues", async () => {
@@ -389,7 +402,7 @@ describe("Phase 1B.5 planning UI", () => {
     ];
     await renderPlan(next);
 
-    const itinerarySection = screen.getByRole("heading", { name: "Route & itinerary" }).closest("section")!;
+    const itinerarySection = screen.getByRole("heading", { name: "Your itinerary" }).closest("section")!;
     const scheduledStop = within(itinerarySection).getByText("Kayaking").closest("article")!;
     expect(within(scheduledStop).getByText("On the bay")).toBeTruthy();
     expect(within(scheduledStop).getByText("9:15 AM")).toBeTruthy();
@@ -832,7 +845,7 @@ describe("Phase 1B.5 planning UI", () => {
     const refreshed = structuredClone(next);
     refreshed.itinerary_items = refreshed.itinerary_items.filter((item) => item.id !== "item-2");
     vi.mocked(resyncPlan).mockResolvedValue(refreshed);
-    const itinerarySection = screen.getByRole("heading", { name: "Route & itinerary" }).closest("section")!;
+    const itinerarySection = screen.getByRole("heading", { name: "Your itinerary" }).closest("section")!;
     fireEvent.click(within(itinerarySection).getByText("Delete me").closest("article")!.querySelector("button.btn-danger")!);
     await waitFor(() => expect(deleteItineraryItem).toHaveBeenCalledWith("app-jwt", "plan-1", "item-2", 2));
     await waitFor(() => expect(screen.queryByLabelText(/Scheduled: Delete me/)).toBeNull());
@@ -907,12 +920,12 @@ describe("Phase 1B.5 planning UI", () => {
     next.activities.push({ ...next.activities[0], id: "activity-2", name: "Museum" });
     next.itinerary_items[0].activity_id = "activity-2";
     await renderPlan(next);
-    expect(screen.getByRole("button", { name: "Collapse Not in itinerary (1)" })).toBeTruthy();
-    const inItinerary = screen.getByRole("button", { name: "Collapse In itinerary (1)" });
+    expect(screen.getByRole("button", { name: "Collapse Ideas to decide (1)" })).toBeTruthy();
+    const inItinerary = screen.getByRole("button", { name: "Collapse Selected for this trip (1)" });
     const group = inItinerary.closest("section")!;
     expect(within(group).getByRole("heading", { name: "Museum" })).toBeTruthy();
     fireEvent.keyDown(inItinerary, { key: " " });
-    expect(screen.getByRole("button", { name: "Expand In itinerary (1)" }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByRole("button", { name: "Expand Selected for this trip (1)" }).getAttribute("aria-expanded")).toBe("false");
   });
 
   it("collapses balances while retaining the authoritative outstanding summary", async () => {

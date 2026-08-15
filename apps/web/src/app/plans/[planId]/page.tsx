@@ -55,6 +55,7 @@ import {
 import { formatCents, parseDollarCents } from "@/lib/money";
 import { connectionLabel } from "@/hooks/useConnectionStatus";
 import { usePlanSocket } from "@/hooks/usePlanSocket";
+import type { PresenceContext, PresenceUser } from "@/hooks/usePlanSocket";
 import { snapshotToPlanDetail } from "@/hooks/useResyncPlan";
 import { AvailabilityCalendar } from "@/components/plans/availability-calendar";
 import { AdventureBackground } from "@/components/plans/adventure-background";
@@ -93,6 +94,22 @@ function displayMember(snapshot: ResyncSnapshot, userId: string) {
 
 function initials(name: string) {
   return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "?";
+}
+
+function PresenceAvatarStack({ users, compact = false, label }: { users: PresenceUser[]; compact?: boolean; label?: string }) {
+  const visible = users.slice(0, compact ? 3 : 4);
+  const overflow = users.length - visible.length;
+  const accessibleLabel = label ?? `${users.length} ${users.length === 1 ? "person" : "people"} here`;
+  return <span className={`presence-stack ${compact ? "presence-stack-compact" : ""}`} aria-label={accessibleLabel} role="status">
+    <span className="presence-avatars" aria-hidden="true">{visible.map((user) => <span className="presence-avatar" key={user.user_id} title={user.display_name}>{avatarEmoji(user.avatar_emoji)}</span>)}{overflow > 0 && <span className="presence-avatar presence-overflow">+{overflow}</span>}</span>
+    {!compact && <span className="presence-label">{users.length === 0 ? "No one else here" : `${users.length} here`}</span>}
+  </span>;
+}
+
+function EditingPresence({ users }: { users: PresenceUser[] }) {
+  if (!users.length) return null;
+  const names = users.map((user) => user.display_name).join(", ");
+  return <span className="editing-presence" aria-label={`${names} ${users.length === 1 ? "is" : "are"} editing`}><PresenceAvatarStack users={users} compact label={`${names} editing`} /><span>{users.length === 1 ? "editing" : "editing"}</span></span>;
 }
 
 function TripMembersCard({
@@ -350,16 +367,16 @@ function ItineraryDraftCard({ token, planId, planningVersion, canManage, finaliz
     } finally { setLoading(false); }
   };
   return <section className="card section-card itinerary-draft" aria-labelledby="itinerary-draft-heading">
-    <div className="section-heading"><div><h2 id="itinerary-draft-heading">Itinerary draft</h2><p className="muted small">A deterministic suggested schedule based on saved plan data.</p></div></div>
-    {!canManage && <p className="muted small">An owner or co-owner can generate a draft.</p>}
-    {canManage && !run && <button className="btn" disabled={loading || finalized} onClick={() => void request(() => createPlanningRun(token, planId))} type="button">{loading ? "Generating draft…" : "Generate draft"}</button>}
-    {stale && <div className="notice" role="status"><p>This draft is outdated because the plan changed after generation.</p><div className="cluster"><button className="btn" disabled={loading || finalized} onClick={() => void request(() => regeneratePlanningRun(token, planId, run!.id))} type="button">Regenerate</button><button className="btn btn-secondary" disabled={loading} onClick={() => setReviewingStale(true)} type="button">Review anyway</button></div></div>}
-    {run?.draft_status === "invalid" && <div className="alert" role="alert"><p>This draft could not be validated.</p>{run.validation_errors.map((error) => <p className="small" key={error}>{error}</p>)}<button className="btn btn-secondary" disabled={loading || finalized} onClick={() => void request(() => regeneratePlanningRun(token, planId, run.id))} type="button">Regenerate</button></div>}
+    <div className="section-heading"><div><p className="eyebrow">Optional proposal</p><h2 id="itinerary-draft-heading">Suggested itinerary</h2><p className="muted small">A proposed day-by-day arrangement based on your group’s current choices.</p></div></div>
+    {!canManage && <p className="muted small">An owner or co-owner can generate a suggested itinerary.</p>}
+    {canManage && !run && <button className="btn" disabled={loading || finalized} onClick={() => void request(() => createPlanningRun(token, planId))} type="button">{loading ? "Generating suggestion…" : "Generate suggested itinerary"}</button>}
+    {stale && <div className="notice" role="status"><p>This suggestion is out of date because the plan changed.</p><div className="cluster"><button className="btn" disabled={loading || finalized} onClick={() => void request(() => regeneratePlanningRun(token, planId, run!.id))} type="button">Generate a new suggestion</button><button className="btn btn-secondary" disabled={loading} onClick={() => setReviewingStale(true)} type="button">Review old suggestion</button></div></div>}
+    {run?.draft_status === "invalid" && <div className="alert" role="alert"><p>This suggestion could not be validated.</p>{run.validation_errors.map((error) => <p className="small" key={error}>{error}</p>)}<button className="btn btn-secondary" disabled={loading || finalized} onClick={() => void request(() => regeneratePlanningRun(token, planId, run.id))} type="button">Try another suggestion</button></div>}
     {run?.draft && (!stale || reviewingStale) && <div className="stack itinerary-draft-preview">
       {run.draft.days.map((day, dayIndex) => <article className="subcard" key={day.date ?? `unscheduled-${dayIndex}`}><strong>{day.date ?? "Unscheduled within the trip"}</strong><div className="stack">{day.items.map((item) => <div className="split small" key={item.activity_id}><span><strong>{item.title}</strong><br /><span className="muted">Unscheduled time · rank #{item.recommendation_rank}</span></span><span className="muted">{item.reason_codes.join(", ")}</span></div>)}</div></article>)}
       {run.draft.warnings.map((warning) => <p className="muted small" key={warning}>{warning}</p>)}
-      {!stale && run.draft_status === "fresh" && <div className="cluster"><button className="btn" disabled={loading || finalized || !canManage} onClick={() => void apply()} type="button">Apply draft</button><button className="btn btn-secondary" disabled={loading || finalized || !canManage} onClick={() => void request(() => regeneratePlanningRun(token, planId, run.id))} type="button">Regenerate</button></div>}
-      {stale && <p className="muted small">Review only — stale drafts cannot be applied.</p>}
+      {!stale && run.draft_status === "fresh" && <div className="cluster"><button className="btn" disabled={loading || finalized || !canManage} onClick={() => void apply()} type="button">Apply suggestion</button><button className="btn btn-secondary" disabled={loading || finalized || !canManage} onClick={() => void request(() => regeneratePlanningRun(token, planId, run.id))} type="button">Try another suggestion</button></div>}
+      {stale && <p className="muted small">Review only — stale suggestions cannot be applied.</p>}
     </div>}
   </section>;
 }
@@ -432,6 +449,7 @@ export default function PlanPage() {
   const [planSuggestionTitle, setPlanSuggestionTitle] = useState("");
   const [planSuggestionDescription, setPlanSuggestionDescription] = useState("");
   const [notificationRefreshKey, setNotificationRefreshKey] = useState(0);
+  const [presence, setPresence] = useState<PresenceUser[]>([]);
 
   const closeScheduleModal = () => {
     setScheduleTarget(null);
@@ -483,8 +501,23 @@ export default function PlanPage() {
       setPlan(null);
       setAuthFailed(false);
       setAuthorizationFailed(true);
-    }
+      setPresence([]);
+    },
+    onPresence: setPresence
   });
+
+  useEffect(() => {
+    const context: PresenceContext | null = editingActivity
+      ? { active_context: "activity edit", editing_entity_type: "activity", editing_entity_id: editingActivity.id }
+      : editingItineraryId
+        ? { active_context: "itinerary edit", editing_entity_type: "itinerary_item", editing_entity_id: editingItineraryId }
+        : scheduleTarget?.kind === "existing"
+          ? { active_context: "schedule activity", editing_entity_type: "itinerary_item", editing_entity_id: scheduleTarget.itemId }
+          : dashboardEditor
+            ? { active_context: "plan settings" }
+            : null;
+    socket.setPresenceContext(context);
+  }, [dashboardEditor, editingActivity, editingItineraryId, scheduleTarget, socket.setPresenceContext]);
 
   async function load() {
     if (!session?.appJwt) return;
@@ -618,13 +651,14 @@ export default function PlanPage() {
     const index = itinerary.findIndex((candidate) => candidate.id === item.id);
     const activity = item.activity_id ? plan.activities.find((candidate) => candidate.id === item.activity_id) : undefined;
     const schedule = item.starts_at ? readableItinerarySchedule(item.starts_at) : null;
+    const itineraryEditors = presence.filter((user) => user.editing_entity_type === "itinerary_item" && user.editing_entity_id === item.id);
     return <article className={`itinerary-row ${schedule ? "is-scheduled" : "is-unscheduled"}`} key={item.id}>
       <div className="itinerary-time"><span>{schedule?.time ?? "Time TBD"}</span>{schedule && <small>{schedule.dateTime}</small>}</div>
       <span className="step" aria-hidden="true" />
       <div className="itinerary-stop">
         <div className="split">
           <div>
-            <strong>{item.title}</strong>
+            <div className="itinerary-title-with-presence"><strong>{item.title}</strong><EditingPresence users={itineraryEditors} /></div>
             <p className="itinerary-description">{activity?.description?.trim() || "No description"}</p>
             {activity && <div className="metadata itinerary-metadata">{activity.estimated_cost_cents !== null && <span>{formatCents(activity.estimated_cost_cents)}</span>}{activity.estimated_duration_minutes !== null && <span>{readableDuration(activity.estimated_duration_minutes)}</span>}{activity.address && <span>{activity.address}</span>}</div>}
             {!schedule && <div className="itinerary-unscheduled"><span>Not scheduled</span><button className="btn btn-quiet" disabled={disabled} onClick={() => { setScheduleTarget({ kind: "existing", itemId: item.id, title: item.title, version: item.version }); setScheduleDate(""); setScheduleTime(""); }} type="button">Schedule</button></div>}
@@ -644,7 +678,7 @@ export default function PlanPage() {
     <header className="plan-header trip-hero">
       <Link className="breadcrumb" href="/dashboard">← Back to dashboard</Link>
       <div className="plan-title-row">
-        <div><p className="eyebrow">Trip overview</p><h1>{plan.title}</h1><div className="cluster"><span className={`badge badge-${plan.status}`}>{plan.status}</span><span className={`badge badge-${plan.role}`}>{plan.role.replace("_", "-")}</span><span className={`badge badge-${socket.connectionState}`}><span className="status-dot" />{connectionLabel(socket.connectionState)}</span></div></div>
+        <div><p className="eyebrow">Trip overview</p><h1>{plan.title}</h1><div className="cluster"><span className={`badge badge-${plan.status}`}>{plan.status}</span><span className={`badge badge-${plan.role}`}>{plan.role.replace("_", "-")}</span><span className={`badge badge-${socket.connectionState}`}><span className="status-dot" />{connectionLabel(socket.connectionState)}</span><PresenceAvatarStack users={presence} label={`${presence.length} ${presence.length === 1 ? "person" : "people"} here`} /></div></div>
         <div className="plan-actions">
           {canManage && <button className="btn btn-secondary" disabled={pending} onClick={() => void mutate(async () => { const invite = await createInvite(session.appJwt!, planId); setInviteToken(invite.token); })}>Create invite</button>}
           {canManage && <button className="btn" disabled={pending} onClick={() => void mutate(() => setPlanLifecycle(session.appJwt!, planId, finalized ? "unfinalize" : "finalize", plan.version), true)}>{finalized ? "Unfinalize plan" : "Finalize plan"}</button>}
@@ -702,10 +736,11 @@ export default function PlanPage() {
         const parts = durationParts(activity.estimated_duration_minutes);
         const itineraryItem = snapshot.itinerary_items.find((item) => item.activity_id === activity.id);
         const isInItinerary = Boolean(itineraryItem?.starts_at);
+        const activityEditors = presence.filter((user) => user.editing_entity_type === "activity" && user.editing_entity_id === activity.id);
         return { activityId: activity.id, card: <article className={`activity-card ${itineraryItem ? "activity-card-in-itinerary" : "activity-card-not-in-itinerary"}`} key={activity.id}>
           <div className="split activity-card-header">
             <div className="activity-card-copy">
-              <div className="activity-card-title"><h3>{activity.name}</h3>{itineraryItem && <span className={`activity-itinerary-state ${isInItinerary ? "is-scheduled" : ""}`}>{isInItinerary ? "Scheduled" : "In itinerary"}</span>}</div>
+              <div className="activity-card-title"><h3>{activity.name}</h3>{!itineraryItem && <span className="activity-itinerary-state">Considering</span>}{itineraryItem && <span className={`activity-itinerary-state ${isInItinerary ? "is-scheduled" : ""}`}>{isInItinerary ? "Scheduled" : "Selected"}</span>}<EditingPresence users={activityEditors} /></div>
               <p className="muted small">{activity.description || "No description yet."}</p>
               <p className="activity-author">Suggested by {activity.creator_display_name || "a group member"}</p>
             </div>
@@ -717,7 +752,7 @@ export default function PlanPage() {
         {editingActivity?.id === activity.id && <form className="form-grid subcard" onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const form = new FormData(event.currentTarget); const cost = String(form.get("cost") ?? "").trim(); const cents = cost === "" ? null : parseDollarCents(cost); const duration = parseDuration(String(form.get("hours") ?? ""), String(form.get("minutes") ?? "")); const name = String(form.get("name") ?? "").trim(); if (!name || (cost !== "" && cents === null) || duration === null) { setError("Enter a name, valid cost, and a positive duration with minutes from 0 to 59."); return; } void mutate(() => patchActivity(session.appJwt!, planId, activity.id, { expected_version: activity.version, name, description: String(form.get("description") ?? "") || null, address: String(form.get("address") ?? "") || null, estimated_cost_cents: cents, estimated_duration_minutes: duration ?? null, tags: String(form.get("tags") ?? "").split(",").map((tag) => tag.trim()).filter(Boolean), notes: String(form.get("notes") ?? "") || null })); setEditingActivity(null); }}>
           <label className="field">Name <input name="name" defaultValue={activity.name} disabled={disabled} /></label><label className="field">Description <input name="description" defaultValue={activity.description ?? ""} disabled={disabled} /></label><label className="field">Address <input name="address" defaultValue={activity.address ?? ""} disabled={disabled} /></label><label className="field">Cost <input name="cost" inputMode="decimal" defaultValue={activity.estimated_cost_cents === null ? "" : (activity.estimated_cost_cents / 100).toFixed(2)} disabled={disabled} /></label><fieldset className="duration-input"><legend>Duration</legend><label className="field">Hours <input name="hours" aria-label="Hours" min="0" inputMode="numeric" defaultValue={parts.hours} disabled={disabled} /></label><label className="field">Minutes <input name="minutes" aria-label="Minutes" min="0" max="59" inputMode="numeric" defaultValue={parts.minutes} disabled={disabled} /></label></fieldset><label className="field">Tags <input name="tags" defaultValue={activity.tags.join(", ")} disabled={disabled} /></label><label className="field">Notes <input name="notes" defaultValue={activity.notes ?? ""} disabled={disabled} /></label><div className="cluster form-span"><button className="btn" disabled={disabled}>Save activity</button><button className="btn btn-secondary" type="button" onClick={() => setEditingActivity(null)}>Cancel</button></div>
         </form>}<details><summary>Discussion ({snapshot.activity_comments.filter((comment) => comment.activity_id === activity.id && !comment.deleted_at).length})</summary>{snapshot.activity_comments.filter((comment) => comment.activity_id === activity.id).map((comment) => <div className="conversation" key={comment.id}><span className="avatar">{initials(comment.author_display_name)}</span><div><strong>{comment.author_display_name}</strong><p>{comment.deleted_at ? "Comment deleted" : comment.body}</p></div></div>)}<form className="cluster" onSubmit={(event) => { event.preventDefault(); const body = commentBodies[activity.id]?.trim(); if (body) { void mutate(() => createComment(session.appJwt!, planId, activity.id, body, crypto.randomUUID())); setCommentBodies((current) => ({ ...current, [activity.id]: "" })); } }}><label className="field" style={{ flex: 1 }}>Comment <input value={commentBodies[activity.id] ?? ""} onChange={(event) => setCommentBodies((current) => ({ ...current, [activity.id]: event.target.value }))} /></label><button className="btn" disabled={pending}>Post comment</button></form><form className="cluster" onSubmit={(event) => { event.preventDefault(); const message = String(new FormData(event.currentTarget).get("suggestion") ?? ""); if (message.trim()) void mutate(() => createActivitySuggestion(session.appJwt!, planId, activity.id, { suggestion_type: "general_modification", proposed_changes_json: { notes: message.trim() }, message, client_operation_id: crypto.randomUUID() })); }}><label className="field" style={{ flex: 1 }}>Suggest a change <input name="suggestion" /></label><button className="btn btn-secondary" disabled={pending}>Submit suggestion</button></form>{snapshot.activity_suggestions.filter((suggestion) => suggestion.activity_id === activity.id).map((suggestion) => <div className="suggestion" key={suggestion.id}><div className="split"><span><strong>{suggestion.author_display_name}</strong>: {suggestion.message}</span><span className="badge">{suggestion.status}</span></div>{canManage && suggestion.status === "open" && <div className="cluster"><button className="btn" disabled={disabled} onClick={() => void mutate(() => decideActivitySuggestion(session.appJwt!, planId, activity.id, suggestion.id, "accept", activity.version, crypto.randomUUID()))}>Accept</button><button className="btn btn-secondary" disabled={pending} onClick={() => void mutate(() => decideActivitySuggestion(session.appJwt!, planId, activity.id, suggestion.id, "dismiss", activity.version, crypto.randomUUID()))}>Dismiss</button></div>}</div>)}</details></article> };
-      }); const notInItinerary = activityCards.filter(({ activityId }) => !itineraryActivityIds.has(activityId)); const inItinerary = activityCards.filter(({ activityId }) => itineraryActivityIds.has(activityId)); return <div className="activity-groups" style={{ marginTop: showActivityForm ? 16 : 0 }}><DisclosureSection id="trip-ideas-not-in-itinerary" title={`Not in itinerary (${notInItinerary.length})`} summary="Activities still waiting to be scheduled." defaultOpen={true} className="nested-disclosure"><div className="stack">{notInItinerary.length ? notInItinerary.map(({ card }) => card) : <p className="muted small">Every trip idea is already in the itinerary.</p>}</div></DisclosureSection><DisclosureSection id="trip-ideas-in-itinerary" title={`In itinerary (${inItinerary.length})`} summary="Activities represented in the current itinerary." defaultOpen={true} className="nested-disclosure"><div className="stack">{inItinerary.length ? inItinerary.map(({ card }) => card) : <p className="muted small">No trip ideas are in the itinerary yet.</p>}</div></DisclosureSection></div>; })()}
+      }); const notInItinerary = activityCards.filter(({ activityId }) => !itineraryActivityIds.has(activityId)); const inItinerary = activityCards.filter(({ activityId }) => itineraryActivityIds.has(activityId)); return <div className="activity-groups" style={{ marginTop: showActivityForm ? 16 : 0 }}><DisclosureSection id="trip-ideas-not-in-itinerary" title={`Ideas to decide (${notInItinerary.length})`} summary="Vote and discuss what should make the trip." defaultOpen={true} className="nested-disclosure"><div className="idea-card-grid">{notInItinerary.length ? notInItinerary.map(({ card }) => card) : <p className="muted small">Every trip idea is already in the itinerary.</p>}</div></DisclosureSection><DisclosureSection id="trip-ideas-in-itinerary" title={`Selected for this trip (${inItinerary.length})`} summary="Activities your group has committed to." defaultOpen={true} className="nested-disclosure"><div className="stack">{inItinerary.length ? inItinerary.map(({ card }) => card) : <p className="muted small">No trip ideas are in the itinerary yet.</p>}</div></DisclosureSection></div>; })()}
     </DisclosureSection>
 
     <RecommendationCard recommendations={recommendations} />
@@ -728,7 +763,7 @@ export default function PlanPage() {
 
     </div>
     <section className="card section-card itinerary-day-view" id="itinerary-day-view" aria-labelledby="itinerary-day-view-heading">
-      <div className="section-heading"><div><p className="eyebrow">Day / itinerary timeline</p><h2 id="itinerary-day-view-heading">Route &amp; itinerary</h2><p className="muted small">Shape the day into a clear running order.</p></div></div>
+      <div className="section-heading"><div><p className="eyebrow">Day / itinerary timeline</p><h2 id="itinerary-day-view-heading">Your itinerary</h2><p className="muted small">The day-by-day running order for the trip.</p></div></div>
       <form className="subcard itinerary-composer" onSubmit={(event: FormEvent) => { event.preventDefault(); if (!itineraryTitle.trim()) { setError("Enter an itinerary title."); return; } if (itineraryDate && !itineraryTime) { setError("Choose a start time or leave the item unscheduled."); return; } void mutate(() => createItineraryItemRequest(session.appJwt!, planId, { title: itineraryTitle.trim(), ...(itineraryDate ? { starts_at: itineraryTimestamp(itineraryDate, itineraryTime) } : {}), client_operation_id: crypto.randomUUID() })); setItineraryTitle(""); setItineraryDate(""); setItineraryTime(""); }}><span className="itinerary-composer-label" aria-hidden="true">+</span><label className="field">Itinerary item <input placeholder="Add itinerary stop" value={itineraryTitle} onChange={(event) => setItineraryTitle(event.target.value)} disabled={disabled} /></label><label className="field">Itinerary schedule date <input value={itineraryDate} min={plan.starts_on?.slice(0, 10) ?? undefined} max={plan.ends_on?.slice(0, 10) ?? undefined} onChange={(event) => setItineraryDate(event.target.value)} type="date" disabled={disabled} /></label><label className="field">Itinerary start time <input value={itineraryTime} onChange={(event) => setItineraryTime(event.target.value)} type="time" disabled={disabled || !itineraryDate} /></label><button className="btn" disabled={disabled}>Add stop</button></form>
       <p className="muted small itinerary-composer-note">Scheduling uses the plan’s UTC calendar date. Set both date and time; items without both remain unscheduled.</p>
       <div className="itinerary-day-groups">
