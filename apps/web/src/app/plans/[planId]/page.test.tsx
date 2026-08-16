@@ -129,6 +129,10 @@ describe("Phase 1B.5 planning UI", () => {
     expect(bell.closest(".plan-actions")).toBeNull();
     expect(document.querySelectorAll(".notification-entry")).toHaveLength(1);
     expect(document.querySelector(".plan-header")?.contains(bell)).toBe(false);
+    fireEvent.click(bell);
+    const panel = await screen.findByRole("dialog", { name: "Notifications" });
+    expect(panel.parentElement).toBe(document.body);
+    expect(document.querySelector(".plan-header")?.contains(panel)).toBe(false);
   });
 
   it("renders compact member-scoped presence and contextual editing indicators", async () => {

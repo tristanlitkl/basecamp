@@ -36,6 +36,10 @@ describe("NotificationBell", () => {
     render(<NotificationBell token="jwt" planId="plan" refreshKey={0} />);
     await waitFor(() => expect(screen.getByRole("button", { name: /2 unread/ })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: /2 unread/ }));
+    const panel = await screen.findByRole("dialog", { name: "Notifications" });
+    expect(panel.parentElement).toBe(document.body);
+    expect(document.querySelector(".notification-entry")?.contains(panel)).toBe(false);
+    expect(screen.getAllByRole("dialog", { name: "Notifications" })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: /Newest|Older/ }).map((item) => item.textContent)).toEqual([
       expect.stringContaining("Newest"), expect.stringContaining("Older")
     ]);
@@ -45,6 +49,26 @@ describe("NotificationBell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Mark all read" }));
     await waitFor(() => expect(api.markAllNotificationsRead).toHaveBeenCalledWith("jwt", "plan"));
     expect(screen.getByRole("button", { name: "Mark all read" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("keeps portaled panel interaction open, closes outside clicks, and returns focus after Escape", async () => {
+    api.getNotifications.mockResolvedValue({ notifications: [], unread_count: 0, offset: 0, limit: 25, has_more: false });
+    render(<NotificationBell token="jwt" planId="plan" refreshKey={0} />);
+    const bell = screen.getByRole("button", { name: "Notifications" });
+    fireEvent.click(bell);
+    const panel = await screen.findByRole("dialog", { name: "Notifications" });
+    fireEvent.pointerDown(panel);
+    expect(screen.getByRole("dialog", { name: "Notifications" })).toBeTruthy();
+    fireEvent.pointerDown(document.body);
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull());
+
+    fireEvent.click(bell);
+    await screen.findByRole("dialog", { name: "Notifications" });
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
+      expect(document.activeElement).toBe(bell);
+    });
   });
 
   it("renders the empty state without depending on a live source entity", async () => {
@@ -69,10 +93,14 @@ describe("NotificationBell", () => {
     render(<NotificationBell token="jwt" planId="plan" refreshKey={0} />);
     fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
     const panel = await screen.findByRole("dialog", { name: "Notifications" });
-    fireEvent.keyDown(panel, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull());
+    expect(panel.parentElement).toBe(document.body);
     const styles = readFileSync("src/app/globals.css", "utf8");
-    expect(styles).toContain(".notification-panel { position: fixed;");
+    expect(styles).toContain("--z-header: 10;");
+    expect(styles).toContain("--z-popover: 30;");
+    expect(styles).toContain("--z-modal: 40;");
+    expect(styles).toContain(".notification-panel { position: fixed; z-index: var(--z-popover);");
+    expect(styles).toContain(".plan-header { position: relative;");
+    expect(styles).toContain("overflow: hidden;");
     expect(styles).toContain("max-height: min(70dvh, 480px);");
   });
 
