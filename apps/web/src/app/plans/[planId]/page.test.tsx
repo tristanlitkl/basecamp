@@ -635,13 +635,15 @@ describe("Phase 1B.5 planning UI", () => {
     expect(screen.getByText("Great idea")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Comment"), { target: { value: "Another" } }); fireEvent.click(screen.getByRole("button", { name: "Post comment" }));
     await waitFor(() => expect(createComment).toHaveBeenCalledWith("app-jwt", "plan-1", "activity-1", "Another", "operation-id"));
-    fireEvent.click(screen.getAllByRole("button", { name: "Accept" })[0]);
+    const activityCard = screen.getByRole("heading", { name: "Kayaking" }).closest("article")!;
+    fireEvent.click(within(activityCard).getByRole("button", { name: "Accept" }));
     await waitFor(() => expect(decideActivitySuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", "activity-1", "suggestion-1", "accept", 3, "operation-id"));
     fireEvent.click(screen.getByRole("button", { name: /Date window.*Open editor/ }));
     fireEvent.change(screen.getByLabelText("Date"), { target: { value: "2026-07-18" } }); fireEvent.click(screen.getByRole("button", { name: "Save availability" }));
     await waitFor(() => expect(upsertDateAvailability).toHaveBeenCalled());
     expect(screen.getByText(/Jul 18, 2026 – Jul 21, 2026/)).toBeTruthy();
-    fireEvent.click(screen.getAllByRole("button", { name: "Dismiss" }).at(-1)!);
+    const dateOption = screen.getByText(/Jul 18, 2026 – Jul 21, 2026/).closest("article")!;
+    fireEvent.click(within(dateOption).getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(decideDateSuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", "date-1", "dismiss", 4, "operation-id"));
     expect(vi.mocked(resyncPlan).mock.calls.length).toBeGreaterThan(1);
   });
@@ -716,6 +718,21 @@ describe("Phase 1B.5 planning UI", () => {
     fireEvent.click(within(open).getByRole("button", { name: /Vote maybe/ }));
     await waitFor(() => expect(voteDateSuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", "date-later", "maybe", "operation-id"));
     await waitFor(() => expect(resyncPlan).toHaveBeenCalledTimes(2));
+  });
+
+  it("restores the visible suggest-new-date entry point and submits through the existing date suggestion flow", async () => {
+    await renderPlan();
+
+    const poll = screen.getByRole("heading", { name: "Travel-window poll" }).closest("section")!;
+    expect(poll.closest(".planning-primary")).not.toBeNull();
+    fireEvent.click(within(poll).getByRole("button", { name: "+ Suggest new date" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Date Window" });
+    fireEvent.change(within(dialog).getByLabelText("Suggested start"), { target: { value: "2026-09-10" } });
+    fireEvent.change(within(dialog).getByLabelText("Suggested end"), { target: { value: "2026-09-14" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Suggest new date" }));
+
+    await waitFor(() => expect(createDateSuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", "2026-09-10", "2026-09-14", "operation-id"));
   });
 
   it("reviews and adopts whole-plan ideas without hiding preserved plan surfaces", async () => {
