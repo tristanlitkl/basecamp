@@ -1,0 +1,162 @@
+.planPage {
+  --travel-ink: #111b35;
+  --travel-muted: #66718a;
+  --travel-paper: #f6f7f4;
+  --travel-cobalt: #3158d9;
+  --travel-cyan: #0b9cb2;
+  --travel-line: #dfe4ea;
+}
+
+.planPage :global(.plan-header) {
+  margin: 18px 0 28px;
+  padding: clamp(28px, 5vw, 58px);
+  border: 0;
+  border-radius: 24px;
+  background: radial-gradient(circle at 84% 20%, rgb(103 216 222 / 32%), transparent 28%), linear-gradient(125deg, #0c1730, #1d3470 58%, #3158d9);
+  box-shadow: 0 22px 50px rgb(13 27 60 / 22%);
+}
+
+.planPage :global(.trip-context) { max-width: 590px; margin: 12px 0 0; color: #d6e0f5; font-size: 1rem; line-height: 1.55; }
+.planPage :global(.trip-identity),
+.planPage :global(.trip-hero-footer) { display: flex; align-items: center; flex-wrap: wrap; gap: 9px 16px; margin-top: 22px; color: #dbe6fb; font-size: .82rem; font-weight: 720; }
+.planPage :global(.trip-identity > span:not(.presence-stack)) { padding-right: 16px; border-right: 1px solid rgb(255 255 255 / 20%); }
+.planPage :global(.trip-hero-footer) { padding-top: 17px; border-top: 1px solid rgb(255 255 255 / 19%); }
+.planPage :global(.trip-hero-footer .btn-quiet) { min-height: auto; padding: 2px 0; color: #b9cdf8; }
+.planPage :global(.trip-hero-footer .badge) { border: 0; background: rgb(255 255 255 / 14%); color: white; }
+
+.planPage :global(.planning-workspace) { display: grid; grid-template-columns: minmax(0, 1.92fr) minmax(270px, .78fr); align-items: start; gap: clamp(28px, 4vw, 62px); margin: 0 0 70px; }
+.planPage :global(.planning-primary) { display: flex; min-width: 0; flex-direction: column; gap: 48px; }
+.planPage :global(.planning-primary > #itinerary-day-view) { order: -3; }
+.planPage :global(.planning-primary > #trip-ideas) { order: -2; }
+.planPage :global(.planning-primary > .availability-calendar) { order: -1; margin: 0; padding: 30px 0 0; border-top: 1px solid var(--travel-line); }
+.planPage :global(.planning-primary > #expenses) { order: 2; }
+
+.planPage :global(.itinerary-day-view),
+.planPage :global(.section-card) { margin: 0; }
+.planPage :global(.itinerary-day-view) { padding: 0; overflow: visible; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.planPage :global(.itinerary-day-view > .section-heading) { align-items: end; margin: 0 0 24px; padding: 0; border: 0; }
+.planPage :global(.itinerary-day-view > .section-heading h2) { font-size: clamp(2rem, 3.5vw, 3.15rem); letter-spacing: -.055em; }
+.planPage :global(.itinerary-day-view > .section-heading .eyebrow) { color: var(--travel-cobalt); }
+.planPage :global(.itinerary-composer-trigger) { flex: 0 0 auto; }
+.planPage :global(.itinerary-composer) { display: grid; grid-template-columns: auto minmax(180px, 1fr) minmax(130px, .65fr) minmax(115px, .45fr) auto; align-items: end; gap: 10px; margin: 0 0 10px; padding: 14px; border: 1px solid #dbe4f0; border-radius: 16px; background: #fff; box-shadow: 0 10px 24px rgb(29 51 99 / 7%); }
+.planPage :global(.itinerary-composer-label) { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 50%; background: #eaf0ff; color: var(--travel-cobalt); font-size: 1.25rem; font-weight: 760; }
+.planPage :global(.itinerary-composer .field) { gap: 4px; font-size: .7rem; }
+.planPage :global(.itinerary-composer .btn) { min-height: 40px; }
+.planPage :global(.itinerary-composer-note) { margin: 0 0 24px; }
+.planPage :global(.itinerary-day-groups) { gap: 42px; }
+.planPage :global(.itinerary-day-group) { gap: 16px; }
+.planPage :global(.itinerary-day-header) { display: block; padding: 18px 20px 16px; border: 0; border-left: 3px solid var(--travel-cobalt); border-radius: 0; background: linear-gradient(90deg, #edf2ff, rgb(237 242 255 / 0%)); }
+.planPage :global(.itinerary-day-header span) { color: var(--travel-cobalt); font-size: .69rem; letter-spacing: .15em; }
+.planPage :global(.itinerary-day-header h3) { margin-top: 5px; font-size: clamp(1.35rem, 2.2vw, 1.78rem); letter-spacing: -.04em; }
+.planPage :global(.itinerary-day-timeline) { display: grid; gap: 0; padding: 0; }
+.planPage :global(.itinerary-day-view .timeline::before) { top: 19px; bottom: 19px; left: 93px; width: 1px; background: linear-gradient(var(--travel-cobalt), var(--travel-cyan)); }
+.planPage :global(.itinerary-day-view .itinerary-row) { grid-template-columns: 76px 20px minmax(0, 1fr); gap: 14px; padding: 0 0 25px; border: 0; }
+.planPage :global(.itinerary-day-view .itinerary-row:last-child) { padding-bottom: 0; }
+.planPage :global(.itinerary-day-view .itinerary-time) { padding-top: 6px; color: var(--travel-ink); font-size: .78rem; font-weight: 820; }
+.planPage :global(.itinerary-day-view .itinerary-time small) { display: none; }
+.planPage :global(.itinerary-day-view .step) { width: 14px; height: 14px; margin-top: 7px; border: 3px solid var(--travel-paper); background: var(--travel-cobalt); box-shadow: 0 0 0 1px var(--travel-cobalt); }
+.planPage :global(.itinerary-day-view .itinerary-stop) { padding: 0 10px 0 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.planPage :global(.itinerary-day-view .itinerary-stop:hover) { border: 0; box-shadow: none; transform: none; }
+.planPage :global(.itinerary-day-view .itinerary-row > .itinerary-stop > .split:first-child) { align-items: start; gap: 16px; }
+.planPage :global(.itinerary-day-view .itinerary-row strong) { font-size: 1.08rem; letter-spacing: -.015em; }
+.planPage :global(.itinerary-description) { max-width: 600px; margin: 5px 0 0; color: var(--travel-muted); font-size: .87rem; line-height: 1.5; }
+.planPage :global(.itinerary-metadata) { margin-top: 9px; }
+.planPage :global(.itinerary-metadata span) { color: #51617d; font-size: .72rem; }
+.planPage :global(.itinerary-actions) { gap: 2px; opacity: .62; transition: opacity 180ms ease; }
+.planPage :global(.itinerary-row:hover .itinerary-actions),
+.planPage :global(.itinerary-row:focus-within .itinerary-actions) { opacity: 1; }
+.planPage :global(.itinerary-row .itinerary-actions .btn) { min-height: 30px; padding: 4px 6px; border: 0; background: transparent; color: #52607a; font-size: .72rem; }
+.planPage :global(.itinerary-row .itinerary-actions .btn:hover:not(:disabled)) { background: #eef2f8; color: var(--travel-ink); }
+.planPage :global(.itinerary-row .itinerary-actions .itinerary-delete) { color: #b55361; }
+.planPage :global(.itinerary-unscheduled-group) { margin-top: 8px; padding: 22px; border: 1px dashed #c4ccd9; border-radius: 18px; background: #fbfcfd; }
+.planPage :global(.itinerary-unscheduled-group .itinerary-day-header) { padding: 0 0 14px; border-bottom: 1px dashed #d7dce5; border-left: 0; background: transparent; }
+.planPage :global(.itinerary-unscheduled-group .itinerary-day-header span) { color: #83704b; }
+.planPage :global(.itinerary-day-view .is-unscheduled .step) { background: #fff; box-shadow: 0 0 0 1px #909bad; }
+.planPage :global(.itinerary-unscheduled) { margin-top: 10px; }
+.planPage :global(.itinerary-unscheduled .btn-quiet) { border: 0; background: #eaf0ff; color: var(--travel-cobalt); font-weight: 800; }
+
+.planPage :global(#trip-ideas) { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.planPage :global(#trip-ideas > .section-heading) { align-items: end; margin: 0 0 22px; padding: 0; border: 0; }
+.planPage :global(#trip-ideas > .section-heading h2) { font-size: 1.75rem; letter-spacing: -.04em; }
+.planPage :global(#trip-ideas .nested-disclosure) { padding: 0; border-radius: 0; background: transparent; }
+.planPage :global(#trip-ideas .nested-disclosure > .section-heading) { align-items: center; margin: 0 0 13px; padding: 0 0 10px; border-bottom: 1px solid var(--travel-line); }
+.planPage :global(#trip-ideas .nested-disclosure h2) { font-size: 1rem; }
+.planPage :global(#trip-ideas .disclosure-toggle) { min-height: auto; padding: 3px 0; border: 0; background: transparent; color: var(--travel-cobalt); }
+.planPage :global(#trip-ideas .idea-card-grid) { gap: 12px; }
+.planPage :global(#trip-ideas .activity-card) { padding: 0; overflow: hidden; border-radius: 14px; transition: transform 180ms ease, box-shadow 180ms ease; }
+.planPage :global(#trip-ideas .activity-card:hover) { transform: translateY(-2px); }
+.planPage :global(#trip-ideas .activity-card-not-in-itinerary) { border: 1px dashed #c9d1dc; background: #fff; box-shadow: none; }
+.planPage :global(#trip-ideas .activity-card-not-in-itinerary:hover) { border-color: #aab9ce; box-shadow: 0 10px 24px rgb(32 52 91 / 8%); }
+.planPage :global(#trip-ideas .activity-card-in-itinerary) { border: 1px solid #c8d7ff; border-left: 4px solid var(--travel-cobalt); background: linear-gradient(135deg, #f6f8ff, #edf3ff); box-shadow: 0 12px 28px rgb(49 88 217 / 12%); }
+.planPage :global(#trip-ideas .activity-card > .split:first-child) { gap: 14px; padding: 16px; border: 0; }
+.planPage :global(#trip-ideas .activity-card-in-itinerary > .split:first-child) { padding: 19px; }
+.planPage :global(#trip-ideas .activity-card h3) { margin: 0 0 4px; font-size: 1.02rem; }
+.planPage :global(#trip-ideas .activity-card-not-in-itinerary .activity-itinerary-state) { border: 0; background: transparent; color: #78839a; }
+.planPage :global(#trip-ideas .activity-card-not-in-itinerary .activity-itinerary-state::before) { content: "○"; margin-right: 4px; }
+.planPage :global(#trip-ideas .activity-card-in-itinerary .activity-itinerary-state) { border: 0; background: #dfe9ff; color: #2348ba; }
+.planPage :global(#trip-ideas .activity-card-in-itinerary .activity-itinerary-state::before) { content: "✓"; margin-right: 4px; }
+.planPage :global(#trip-ideas .activity-card .metadata) { padding: 0 16px 10px; }
+.planPage :global(#trip-ideas .activity-card-in-itinerary .metadata) { padding: 0 19px 12px; }
+.planPage :global(#trip-ideas .activity-card .chip) { padding: 0; border: 0; border-radius: 0; background: transparent; color: #68748d; font-size: .7rem; }
+.planPage :global(#trip-ideas .activity-card .chip + .chip::before) { margin-right: 7px; color: #acb5c2; content: "·"; }
+.planPage :global(#trip-ideas .activity-card > .split:nth-of-type(2)) { align-items: center; margin: 0; padding: 11px 16px; border-top: 1px solid #edf0f4; background: #fbfcfd; }
+.planPage :global(#trip-ideas .activity-card-in-itinerary > .split:nth-of-type(2)) { padding: 13px 19px; background: rgb(222 233 255 / 54%); }
+.planPage :global(#trip-ideas .activity-card .btn) { min-height: 33px; padding: 5px 8px; font-size: .72rem; }
+.planPage :global(#trip-ideas .activity-card-actions .btn:not(:first-child)) { border: 0; background: transparent; color: #64718a; }
+.planPage :global(#trip-ideas .activity-card-actions .btn-danger) { opacity: .55; }
+.planPage :global(#trip-ideas .activity-card:hover .btn-danger),
+.planPage :global(#trip-ideas .activity-card:focus-within .btn-danger) { opacity: 1; }
+.planPage :global(#trip-ideas .vote-control) { padding: 2px; border: 1px solid #dde3ed; background: #fff; }
+.planPage :global(#trip-ideas .vote-button) { min-height: 28px; padding: 3px 6px; }
+
+.planPage :global(.journey-sidebar) { gap: 18px; }
+.planPage :global(.journey-sidebar .section-card),
+.planPage :global(.trip-summary-panel) { padding: 17px 0; border: 0; border-radius: 0; border-top: 1px solid var(--travel-line); background: transparent; box-shadow: none; }
+.planPage :global(.journey-sidebar .section-card:first-child) { padding-top: 0; border-top: 0; }
+.planPage :global(.journey-sidebar .section-heading) { margin-bottom: 12px; padding-bottom: 0; border: 0; }
+.planPage :global(.journey-sidebar .section-heading h2) { font-size: 1.05rem; }
+.planPage :global(.journey-sidebar .planning-actions) { display: grid; gap: 5px; }
+.planPage :global(.journey-sidebar .planning-actions .btn) { justify-content: flex-start; min-height: 31px; padding: 3px 0; border: 0; background: transparent; color: var(--travel-cobalt); text-align: left; }
+.planPage :global(.trip-summary-panel) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; padding: 0; }
+.planPage :global(.trip-summary-panel .stat) { min-height: 88px; padding: 12px 0; border: 0; border-bottom: 1px solid var(--travel-line); border-radius: 0; background: transparent; box-shadow: none; text-align: left; }
+.planPage :global(.trip-summary-panel .stat:nth-child(odd)) { padding-right: 12px; }
+.planPage :global(.trip-summary-panel .stat:nth-child(even)) { padding-left: 12px; border-left: 1px solid var(--travel-line); }
+.planPage :global(.trip-summary-panel .stat:first-child) { background: transparent; color: var(--travel-ink); }
+.planPage :global(.trip-summary-panel .stat:first-child span),
+.planPage :global(.trip-summary-panel .stat:first-child i) { color: var(--travel-muted); }
+.planPage :global(.trip-members-stat) { grid-column: 1 / -1; }
+.planPage :global(.trip-members-trigger) { padding: 0; }
+.planPage :global(.recommendations .recommendation-list article) { padding: 10px 0; border-bottom: 1px solid var(--travel-line); }
+
+.planPage :global(#expenses) { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.planPage :global(#expenses > .section-heading) { padding-bottom: 14px; }
+
+@media (max-width: 980px) {
+  .planPage :global(.planning-workspace) { grid-template-columns: 1fr; }
+  .planPage :global(.journey-sidebar) { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .planPage :global(.journey-sidebar .planning-status),
+  .planPage :global(.journey-sidebar .recommendations),
+  .planPage :global(.journey-sidebar .trip-summary-panel) { grid-column: span 1; }
+}
+
+@media (max-width: 700px) {
+  .planPage :global(.plan-header) { padding: 26px 22px; border-radius: 19px; }
+  .planPage :global(.plan-title-row) { gap: 22px; }
+  .planPage :global(.trip-identity > span:not(.presence-stack)) { padding-right: 0; border-right: 0; }
+  .planPage :global(.itinerary-day-view > .section-heading) { align-items: start; }
+  .planPage :global(.itinerary-composer-trigger) { width: 100%; }
+  .planPage :global(.itinerary-composer) { grid-template-columns: auto 1fr; }
+  .planPage :global(.itinerary-composer .field:nth-of-type(n + 2)),
+  .planPage :global(.itinerary-composer .btn) { grid-column: 2; }
+  .planPage :global(.itinerary-day-view .timeline::before) { left: 66px; }
+  .planPage :global(.itinerary-day-view .itinerary-row) { grid-template-columns: 52px 16px minmax(0, 1fr); gap: 10px; }
+  .planPage :global(.itinerary-day-view .itinerary-time) { font-size: .7rem; }
+  .planPage :global(.itinerary-day-view .itinerary-row > .itinerary-stop > .split:first-child) { gap: 8px; }
+  .planPage :global(.itinerary-actions) { justify-content: flex-start; opacity: 1; }
+  .planPage :global(.journey-sidebar) { grid-template-columns: 1fr; }
+  .planPage :global(.planning-primary) { gap: 36px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .planPage :global(.activity-card), .planPage :global(.itinerary-actions) { transition: none; }
+}

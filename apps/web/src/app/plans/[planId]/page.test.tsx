@@ -394,6 +394,7 @@ describe("Phase 1B.5 planning UI", () => {
 
   it("orders itinerary items and sends current versions and neighbor contracts", async () => {
     await renderPlan();
+    fireEvent.click(screen.getByRole("button", { name: "+ Add itinerary stop" }));
     fireEvent.change(screen.getByLabelText("Itinerary item"), { target: { value: "Third" } });
     fireEvent.click(screen.getByRole("button", { name: "Add stop" }));
     await waitFor(() => expect(createItineraryItem).toHaveBeenCalledWith("app-jwt", "plan-1", { title: "Third", client_operation_id: "operation-id" }));
@@ -431,6 +432,8 @@ describe("Phase 1B.5 planning UI", () => {
     expect(within(unscheduledStop).getByText("Time TBD")).toBeTruthy();
     expect(within(unscheduledStop).getByText("No description")).toBeTruthy();
     expect(within(unscheduledStop).getByRole("button", { name: "Schedule" })).toBeTruthy();
+    expect(itinerarySection.querySelector(".itinerary-composer")).toBeNull();
+    fireEvent.click(within(itinerarySection).getByRole("button", { name: "+ Add itinerary stop" }));
     expect(itinerarySection.querySelector(".itinerary-composer")).toBeTruthy();
     expect(itinerarySection.querySelector(".itinerary-row.is-scheduled")).toBeTruthy();
     expect(itinerarySection.querySelector(".itinerary-row.is-unscheduled")).toBeTruthy();
@@ -892,6 +895,7 @@ describe("Phase 1B.5 planning UI", () => {
 
   it("schedules an itinerary item through the existing idempotent mutation with an explicit UTC date and time", async () => {
     await renderPlan();
+    fireEvent.click(screen.getByRole("button", { name: "+ Add itinerary stop" }));
     fireEvent.change(screen.getByLabelText("Itinerary item"), { target: { value: "Sunset walk" } });
     fireEvent.change(screen.getByLabelText("Itinerary schedule date"), { target: { value: "2026-08-01" } });
     fireEvent.change(screen.getByLabelText("Itinerary start time"), { target: { value: "18:30" } });
