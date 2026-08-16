@@ -24,7 +24,7 @@
 .planPage :global(.trip-hero-footer .btn-quiet) { min-height: auto; padding: 2px 0; color: #b9cdf8; }
 .planPage :global(.trip-hero-footer .badge) { border: 0; background: rgb(255 255 255 / 14%); color: white; }
 
-.planPage :global(.planning-workspace) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 390px); align-items: start; gap: clamp(32px, 4vw, 64px); margin: 0 0 70px; }
+.planPage :global(.planning-workspace) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, .5fr); align-items: start; gap: clamp(32px, 4vw, 64px); margin: 0 0 70px; }
 .planPage :global(.planning-primary) { display: flex; min-width: 0; flex-direction: column; gap: 52px; }
 .planPage :global(.planning-primary > #itinerary-day-view) { order: -3; }
 .planPage :global(.planning-primary > #trip-ideas) { order: -2; }
@@ -111,17 +111,26 @@
 .planPage :global(#trip-ideas .vote-control) { padding: 3px; border: 1px solid #dde3ed; background: #fff; }
 .planPage :global(#trip-ideas .vote-button) { min-height: 34px; padding: 5px 8px; }
 
-.planPage :global(#travel-window-poll) { padding: 24px; border: 1px solid #d8e2f1; background: linear-gradient(135deg, #fbfdff, #f4f8ff); }
-.planPage :global(#travel-window-poll > .section-heading) { align-items: center; margin-bottom: 20px; padding-bottom: 18px; border-bottom: 1px solid #dfe7f3; }
-.planPage :global(#travel-window-poll .date-poll-list) { gap: 16px; }
-.planPage :global(#travel-window-poll .travel-window-option) { min-width: 0; padding: 20px; border-color: #d6e1f0; box-shadow: 0 6px 18px rgb(24 39 77 / 5%); }
-.planPage :global(#travel-window-poll .travel-window-option-header) { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 16px; }
-.planPage :global(#travel-window-poll .date-range) { display: block; color: var(--travel-ink); font-size: 1.08rem; line-height: 1.35; white-space: nowrap; }
-.planPage :global(#travel-window-poll .poll-suggester) { display: flex; align-items: center; gap: 6px; margin-top: 8px; line-height: 1.45; }
-.planPage :global(#travel-window-poll .poll-option-footer) { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px 22px; margin-top: 18px; padding-top: 16px; border-top: 1px solid #e4ebf5; }
-.planPage :global(#travel-window-poll .poll-votes) { display: flex; flex: 0 0 auto; gap: 8px; margin: 0; }
-.planPage :global(#travel-window-poll .poll-votes .vote-button) { width: 66px; min-height: 48px; font-size: .76rem; }
-.planPage :global(#travel-window-poll .date-decision-actions) { justify-content: flex-end; }
+.planPage :global(#travel-window-poll) { min-width: 0; padding: 18px; border: 1px solid #dce4f1; border-radius: 16px; background: linear-gradient(135deg, #fff, #f7f9ff); box-shadow: 0 9px 24px rgb(24 39 77 / 6%); }
+.planPage :global(#travel-window-poll .travel-window-poll-header) { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.planPage :global(#travel-window-poll h2) { margin: 0; color: var(--travel-ink); font-size: 1.05rem; }
+.planPage :global(#travel-window-poll .travel-window-poll-count) { margin: 5px 0 0; }
+.planPage :global(#travel-window-poll .disclosure-toggle) { flex: 0 0 auto; min-height: 30px; padding: 4px 0; border: 0; background: transparent; color: var(--travel-cobalt); font-size: .73rem; }
+.planPage :global(#travel-window-poll .travel-window-suggest) { width: 100%; min-height: 36px; margin-top: 14px; padding: 7px 11px; font-size: .78rem; }
+.planPage :global(#travel-window-poll .travel-window-poll-content) { padding-top: 14px; }
+.planPage :global(#travel-window-poll .date-poll-list) { gap: 10px; }
+.planPage :global(#travel-window-poll .travel-window-option) { min-width: 0; padding: 14px; border-color: #e0e7f1; border-radius: 12px; background: #fff; box-shadow: 0 4px 12px rgb(24 39 77 / 4%); }
+.planPage :global(#travel-window-poll .travel-window-copy) { min-width: 0; }
+.planPage :global(#travel-window-poll .date-range) { display: block; overflow: hidden; color: var(--travel-ink); font-size: .98rem; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.planPage :global(#travel-window-poll .poll-suggester) { display: flex; align-items: center; gap: 6px; margin-top: 5px; line-height: 1.4; }
+.planPage :global(#travel-window-poll .poll-option-footer) { display: grid; justify-items: start; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #edf0f5; }
+.planPage :global(#travel-window-poll .poll-votes) { display: inline-flex; gap: 3px; margin: 0; padding: 3px; border-radius: 999px; background: #f1f4f9; }
+.planPage :global(#travel-window-poll .poll-votes .vote-button) { display: inline-flex; align-items: center; justify-content: center; gap: 4px; width: auto; min-width: 42px; min-height: 30px; padding: 4px 7px; border: 0; border-radius: 999px; background: transparent; font-size: .72rem; }
+.planPage :global(#travel-window-poll .poll-votes .vote-button.selected) { box-shadow: 0 1px 4px rgb(24 39 77 / 12%); transform: none; }
+.planPage :global(#travel-window-poll .date-decision-actions) { gap: 7px; }
+.planPage :global(#travel-window-poll .date-decision-actions .btn) { min-height: 33px; padding: 6px 10px; font-size: .75rem; }
+.planPage :global(#travel-window-poll .travel-window-remove) { min-height: auto; padding: 1px 0; border: 0; color: #b55361; font-size: .72rem; font-weight: 700; }
+.planPage :global(#travel-window-poll .travel-window-remove:hover:not(:disabled)) { background: transparent; color: #8d3542; text-decoration: underline; }
 
 @container (max-width: 560px) {
   .planPage :global(#trip-ideas .activity-card > .split:first-child),
@@ -130,10 +139,11 @@
   .planPage :global(#trip-ideas .activity-card .cluster) { justify-content: flex-start; }
 }
 
-.planPage :global(.journey-sidebar) { gap: 18px; }
+.planPage :global(.journey-sidebar) { position: static; gap: 18px; }
 .planPage :global(.journey-sidebar .section-card),
 .planPage :global(.trip-summary-panel) { padding: 17px 0; border: 0; border-radius: 0; border-top: 1px solid var(--travel-line); background: transparent; box-shadow: none; }
 .planPage :global(.journey-sidebar .section-card:first-child) { padding-top: 0; border-top: 0; }
+.planPage :global(.journey-sidebar #travel-window-poll) { padding: 18px; border: 1px solid #dce4f1; border-radius: 16px; background: linear-gradient(135deg, #fff, #f7f9ff); box-shadow: 0 9px 24px rgb(24 39 77 / 6%); }
 .planPage :global(.journey-sidebar .section-heading) { margin-bottom: 12px; padding-bottom: 0; border: 0; }
 .planPage :global(.journey-sidebar .section-heading h2) { font-size: 1.05rem; }
 .planPage :global(.journey-sidebar .planning-actions) { display: grid; gap: 5px; }
@@ -154,10 +164,7 @@
 
 @media (max-width: 1160px) {
   .planPage :global(.planning-workspace) { grid-template-columns: 1fr; }
-  .planPage :global(.journey-sidebar) { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
-  .planPage :global(.journey-sidebar .planning-status),
-  .planPage :global(.journey-sidebar .recommendations),
-  .planPage :global(.journey-sidebar .trip-summary-panel) { grid-column: span 1; }
+  .planPage :global(.journey-sidebar) { grid-template-columns: 1fr; align-items: start; }
 }
 
 @media (max-width: 700px) {
@@ -182,16 +189,12 @@
   .planPage :global(#trip-ideas .activity-card-in-itinerary .metadata) { padding: 0 18px 14px; }
   .planPage :global(#trip-ideas .activity-card-actions),
   .planPage :global(#trip-ideas .activity-card .cluster) { justify-content: flex-start; }
-  .planPage :global(#travel-window-poll) { padding: 18px; }
-  .planPage :global(#travel-window-poll > .section-heading) { align-items: flex-start; }
-  .planPage :global(#travel-window-poll .travel-window-option) { padding: 16px; }
-  .planPage :global(#travel-window-poll .travel-window-option-header) { grid-template-columns: 1fr; gap: 10px; }
-  .planPage :global(#travel-window-poll .date-range) { font-size: 1rem; white-space: normal; }
-  .planPage :global(#travel-window-poll .poll-option-footer) { align-items: stretch; flex-direction: column; }
-  .planPage :global(#travel-window-poll .poll-votes),
-  .planPage :global(#travel-window-poll .date-decision-actions) { width: 100%; }
-  .planPage :global(#travel-window-poll .poll-votes .vote-button) { flex: 1; width: auto; }
-  .planPage :global(#travel-window-poll .date-decision-actions .btn) { flex: 1; }
+}
+
+@media (max-width: 420px) {
+  .planPage :global(#travel-window-poll) { padding: 15px; }
+  .planPage :global(#travel-window-poll .travel-window-poll-header) { align-items: flex-start; }
+  .planPage :global(#travel-window-poll .date-range) { overflow: visible; text-overflow: clip; white-space: normal; }
 }
 
 @media (prefers-reduced-motion: reduce) {

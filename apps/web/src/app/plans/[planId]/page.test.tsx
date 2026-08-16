@@ -11,7 +11,7 @@ import {
   createActivitySuggestion,
   createComment,
   createPlanningRun,
-  createDateSuggestion, createPlanSuggestion,
+  archiveDateSuggestion, createDateSuggestion, createPlanSuggestion,
   createCoOwnerRequest, decideCoOwnerRequest,
   createExpense,
   createInvite,
@@ -57,7 +57,7 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
     createItineraryItem: vi.fn(), patchItineraryItem: vi.fn(), reorderItineraryItem: vi.fn(), deleteItineraryItem: vi.fn(),
     createExpense: vi.fn(), patchExpense: vi.fn(), deleteExpense: vi.fn(),
     patchPlan: vi.fn(), setPlanLifecycle: vi.fn(), createInvite: vi.fn(),
-    changeMemberRole: vi.fn(), removeMember: vi.fn(), createCoOwnerRequest: vi.fn(), withdrawCoOwnerRequest: vi.fn(), decideCoOwnerRequest: vi.fn(), createComment: vi.fn(), createActivitySuggestion: vi.fn(), decideActivitySuggestion: vi.fn(), upsertDateAvailability: vi.fn(), createDateSuggestion: vi.fn(), decideDateSuggestion: vi.fn(), voteDateSuggestion: vi.fn(), createPlanSuggestion: vi.fn(), decidePlanSuggestion: vi.fn()
+    changeMemberRole: vi.fn(), removeMember: vi.fn(), createCoOwnerRequest: vi.fn(), withdrawCoOwnerRequest: vi.fn(), decideCoOwnerRequest: vi.fn(), createComment: vi.fn(), createActivitySuggestion: vi.fn(), decideActivitySuggestion: vi.fn(), upsertDateAvailability: vi.fn(), createDateSuggestion: vi.fn(), archiveDateSuggestion: vi.fn(), decideDateSuggestion: vi.fn(), voteDateSuggestion: vi.fn(), createPlanSuggestion: vi.fn(), decidePlanSuggestion: vi.fn()
   };
 });
 
@@ -648,6 +648,53 @@ describe("Phase 1B.5 planning UI", () => {
     expect(vi.mocked(resyncPlan).mock.calls.length).toBeGreaterThan(1);
   });
 
+  it("renders one compact Travel-window poll in the support column while preserving every date action", async () => {
+    const next = snapshot();
+    next.date_suggestions = [{ id: "date-1", starts_on: "2026-07-18", ends_on: "2026-07-21", message: null, status: "open", author_id: "user-2", author_display_name: "Tris", yes_votes: 2, maybe_votes: 1, no_votes: 0, current_user_vote: null }];
+    await renderPlan(next);
+
+    const sidebar = document.querySelector("aside.journey-sidebar")!;
+    const primary = document.querySelector(".planning-primary")!;
+    const poll = document.getElementById("travel-window-poll")!;
+    expect(sidebar.contains(poll)).toBe(true);
+    expect(primary.contains(poll)).toBe(false);
+    expect(document.querySelectorAll("#travel-window-poll")).toHaveLength(1);
+    expect(sidebar.contains(screen.getByRole("heading", { name: "Planning status" }))).toBe(true);
+    expect(sidebar.contains(screen.getByRole("heading", { name: "Recommended activities" }))).toBe(true);
+    expect(within(poll).getByText("1 open option")).toBeTruthy();
+    expect(within(poll).getByText("Jul 18, 2026 – Jul 21, 2026")).toBeTruthy();
+    expect(within(poll).getByText("Suggested by Tris")).toBeTruthy();
+    expect(poll.querySelector(".travel-window-option")?.classList.contains("travel-window-option")).toBe(true);
+    expect(poll.querySelector(".poll-votes")?.querySelectorAll(".vote-button")).toHaveLength(3);
+
+    fireEvent.click(within(poll).getByRole("button", { name: "+ Suggest new date" }));
+    expect(await screen.findByRole("dialog", { name: "Date Window" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close Date Window" }));
+
+    fireEvent.click(within(poll).getByRole("button", { name: "Vote yes for Jul 18, 2026" }));
+    await waitFor(() => expect(voteDateSuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", "date-1", "yes", "operation-id"));
+    fireEvent.click(within(poll).getByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(decideDateSuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", "date-1", "accept", 4, "operation-id"));
+    fireEvent.click(within(poll).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(decideDateSuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", "date-1", "dismiss", 4, "operation-id"));
+    fireEvent.click(within(poll).getByRole("button", { name: "Remove option" }));
+    await waitFor(() => expect(archiveDateSuggestion).toHaveBeenCalledWith("app-jwt", "plan-1", "date-1", "operation-id"));
+
+    const toggle = within(poll).getByRole("button", { name: "Collapse Travel-window poll" });
+    fireEvent.click(toggle);
+    expect(document.getElementById("travel-window-poll-content")?.hidden).toBe(true);
+    expect(within(poll).getByRole("button", { name: "+ Suggest new date" })).toBeTruthy();
+    fireEvent.click(within(poll).getByRole("button", { name: "Expand Travel-window poll" }));
+    expect(document.getElementById("travel-window-poll-content")?.hidden).toBe(false);
+
+    const css = readFileSync("src/app/plans/[planId]/page.module.css", "utf8");
+    expect(css).toContain("grid-template-columns: minmax(0, 1fr) minmax(340px, .5fr)");
+    expect(css).toContain(".poll-votes .vote-button) { display: inline-flex");
+    expect(css).toContain("@media (max-width: 1160px)");
+    expect(css).toContain(".journey-sidebar) { grid-template-columns: 1fr;");
+    expect(css).toContain("@media (max-width: 420px)");
+  });
+
   it("edits plan-level travel metadata in integer minutes and keeps members read-only", async () => {
     const owner = snapshot();
     owner.plan.travel_mode = "train";
@@ -724,7 +771,8 @@ describe("Phase 1B.5 planning UI", () => {
     await renderPlan();
 
     const poll = screen.getByRole("heading", { name: "Travel-window poll" }).closest("section")!;
-    expect(poll.closest(".planning-primary")).not.toBeNull();
+    expect(poll.closest(".journey-sidebar")).not.toBeNull();
+    expect(poll.closest(".planning-primary")).toBeNull();
     fireEvent.click(within(poll).getByRole("button", { name: "+ Suggest new date" }));
 
     const dialog = screen.getByRole("dialog", { name: "Date Window" });

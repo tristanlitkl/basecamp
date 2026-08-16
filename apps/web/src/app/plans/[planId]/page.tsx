@@ -63,7 +63,7 @@ import { AdventureBackground } from "@/components/plans/adventure-background";
 import { NotificationBell } from "@/components/plans/notification-bell";
 import { avatarEmoji } from "@/lib/avatar";
 import { sortMembers } from "@/lib/member-directory";
-import type { ActivityRecommendation, ActivitySummary, Expense, PlanBalance, PlanDetail, PlanningAction, PlanningRun, PlanningStatus, ResyncSnapshot } from "@/types/api";
+import type { ActivityRecommendation, ActivitySummary, DateSuggestion, Expense, PlanBalance, PlanDetail, PlanningAction, PlanningRun, PlanningStatus, ResyncSnapshot } from "@/types/api";
 
 type TravelMode = "car" | "plane" | "train" | "bus";
 
@@ -308,6 +308,49 @@ function DisclosureSection({ id, title, summary, children, defaultOpen = true, c
       </div>
     </div>
     <div aria-labelledby={`${id}-heading`} className="disclosure-content" hidden={!open} id={`${id}-content`}>{children}</div>
+  </section>;
+}
+
+function TravelWindowPoll({
+  suggestions, canManage, pending, disabled, onSuggest, onVote, onDecision, onRemove
+}: {
+  suggestions: DateSuggestion[];
+  canManage: boolean;
+  pending: boolean;
+  disabled: boolean;
+  onSuggest: () => void;
+  onVote: (suggestion: DateSuggestion, vote: "yes" | "maybe" | "no") => void;
+  onDecision: (suggestion: DateSuggestion, decision: "accept" | "dismiss") => void;
+  onRemove: (suggestion: DateSuggestion) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  const openSuggestions = [...suggestions]
+    .filter((suggestion) => suggestion.status === "open")
+    .sort((a, b) => b.yes_votes - a.yes_votes || b.maybe_votes - a.maybe_votes || a.no_votes - b.no_votes || a.starts_on.localeCompare(b.starts_on) || (a.created_at ?? "").localeCompare(b.created_at ?? ""));
+  const optionCount = openSuggestions.length;
+
+  return <section className="section-card travel-window-poll" id="travel-window-poll" aria-labelledby="travel-window-poll-heading">
+    <div className="travel-window-poll-header">
+      <div>
+        <h2 id="travel-window-poll-heading">Travel-window poll</h2>
+        <p className="muted small travel-window-poll-count">{optionCount} open {optionCount === 1 ? "option" : "options"}</p>
+      </div>
+      <button aria-controls="travel-window-poll-content" aria-expanded={open} aria-label={`${open ? "Collapse" : "Expand"} Travel-window poll`} className="disclosure-toggle" onClick={() => setOpen((current) => !current)} type="button"><span aria-hidden="true" className="disclosure-chevron">⌄</span><span>{open ? "Collapse" : "Expand"}</span></button>
+    </div>
+    <button className="btn travel-window-suggest" disabled={pending} onClick={onSuggest} type="button">+ Suggest new date</button>
+    <div className="travel-window-poll-content" hidden={!open} id="travel-window-poll-content">
+      <div className="stack date-poll-list">{openSuggestions.map((suggestion) => <article className="poll-option travel-window-option" key={`poll-${suggestion.id}`}>
+        <div className="travel-window-copy">
+          <strong className="date-range">{readableDate(suggestion.starts_on)} – {readableDate(suggestion.ends_on)}</strong>
+          <p className="muted small poll-suggester"><span aria-hidden="true">{avatarEmoji(suggestion.author_avatar_emoji)}</span> Suggested by {suggestion.author_display_name}</p>
+        </div>
+        <div className="poll-option-footer">
+          <div className="poll-votes" aria-label={`Votes for ${readableDate(suggestion.starts_on)}`}>{(["yes", "maybe", "no"] as const).map((vote) => <button className={`vote-button ${vote} ${suggestion.current_user_vote === vote ? "selected" : ""}`} type="button" key={vote} aria-label={`Vote ${vote} for ${readableDate(suggestion.starts_on)}`} aria-pressed={suggestion.current_user_vote === vote} disabled={pending} onClick={() => onVote(suggestion, vote)}><span aria-hidden="true">{vote === "yes" ? "✓" : vote === "maybe" ? "~" : "×"}</span><span>{vote === "yes" ? suggestion.yes_votes : vote === "maybe" ? suggestion.maybe_votes : suggestion.no_votes}</span></button>)}</div>
+          {canManage && <div className="cluster date-decision-actions"><button className="btn" disabled={disabled} onClick={() => onDecision(suggestion, "accept")}>Accept</button><button className="btn btn-secondary" disabled={pending} onClick={() => onDecision(suggestion, "dismiss")}>Dismiss</button></div>}
+          {canManage && <button className="btn btn-quiet travel-window-remove" disabled={pending} onClick={() => onRemove(suggestion)} type="button">Remove option</button>}
+        </div>
+      </article>)}</div>
+    </div>
   </section>;
 }
 
@@ -706,11 +749,6 @@ export default function PlanPage() {
 
     <AvailabilityCalendar activities={plan.activities} availability={snapshot.date_availability} itineraryItems={snapshot.itinerary_items} members={snapshot.members} plan={plan} suggestions={snapshot.date_suggestions} onOpenEditor={() => setDashboardEditor("date")} />
 
-    <DisclosureSection id="travel-window-poll" title="Travel-window poll" summary={`${snapshot.date_suggestions.filter((suggestion) => suggestion.status === "open").length} open ${snapshot.date_suggestions.filter((suggestion) => suggestion.status === "open").length === 1 ? "option" : "options"}.`} actions={<button className="btn" disabled={pending} onClick={() => setDashboardEditor("date")} type="button">+ Suggest new date</button>}>
-      <div className="stack date-poll-list">{[...snapshot.date_suggestions].filter((suggestion) => suggestion.status === "open").sort((a, b) => b.yes_votes - a.yes_votes || b.maybe_votes - a.maybe_votes || a.no_votes - b.no_votes || a.starts_on.localeCompare(b.starts_on) || (a.created_at ?? "").localeCompare(b.created_at ?? "")).map((suggestion) => <article className="poll-option travel-window-option" key={`poll-${suggestion.id}`}><div className="travel-window-option-header"><div className="travel-window-copy"><strong className="date-range">{readableDate(suggestion.starts_on)} – {readableDate(suggestion.ends_on)}</strong><p className="muted small poll-suggester"><span aria-hidden="true">{avatarEmoji(suggestion.author_avatar_emoji)}</span> Suggested by {suggestion.author_display_name}</p></div>{canManage && <button className="btn btn-quiet" disabled={pending} onClick={() => void mutate(() => archiveDateSuggestion(session.appJwt!, planId, suggestion.id, crypto.randomUUID()), true)}>Remove option</button>}</div><div className="poll-option-footer"><div className="poll-votes" aria-label={`Votes for ${readableDate(suggestion.starts_on)}`}>{(["yes", "maybe", "no"] as const).map((vote) => <button className={`vote-button ${vote} ${suggestion.current_user_vote === vote ? "selected" : ""}`} type="button" key={vote} aria-label={`Vote ${vote} for ${readableDate(suggestion.starts_on)}`} aria-pressed={suggestion.current_user_vote === vote} disabled={pending} onClick={() => void mutate(() => voteDateSuggestion(session.appJwt!, planId, suggestion.id, vote, crypto.randomUUID()))}><span aria-hidden="true">{vote === "yes" ? "✓" : vote === "maybe" ? "~" : "×"}</span><span>{vote === "yes" ? suggestion.yes_votes : vote === "maybe" ? suggestion.maybe_votes : suggestion.no_votes}</span></button>)}</div>{canManage && <div className="cluster date-decision-actions"><button className="btn" disabled={disabled} onClick={() => void mutate(() => decideDateSuggestion(session.appJwt!, planId, suggestion.id, "accept", plan.version, crypto.randomUUID()))}>Accept</button><button className="btn btn-secondary" disabled={pending} onClick={() => void mutate(() => decideDateSuggestion(session.appJwt!, planId, suggestion.id, "dismiss", plan.version, crypto.randomUUID()))}>Dismiss</button></div>}</div></article>)}</div>
-    </DisclosureSection>
-
-
     <DisclosureSection id="trip-ideas" title="Trip ideas" summary={`${plan.activities.length} ${plan.activities.length === 1 ? "activity" : "activities"} to discuss and vote on.`} actions={<button className="btn" disabled={disabled} type="button" onClick={() => setShowActivityForm((value) => !value)}>{showActivityForm ? "Cancel" : "+ Add activity"}</button>}>
       {showActivityForm && <form className="form-grid subcard" onSubmit={(event: FormEvent) => {
         event.preventDefault(); const cents = activityCost ? parseDollarCents(activityCost) : undefined;
@@ -776,6 +814,16 @@ export default function PlanPage() {
 
     </div><aside className="sticky-column journey-sidebar">
     {planningStatus && <PlanningStatusCard status={planningStatus} onAction={handlePlanningAction} />}
+    <TravelWindowPoll
+      suggestions={snapshot.date_suggestions}
+      canManage={canManage}
+      pending={pending}
+      disabled={disabled}
+      onSuggest={() => setDashboardEditor("date")}
+      onVote={(suggestion, vote) => void mutate(() => voteDateSuggestion(session.appJwt!, planId, suggestion.id, vote, crypto.randomUUID()))}
+      onDecision={(suggestion, decision) => void mutate(() => decideDateSuggestion(session.appJwt!, planId, suggestion.id, decision, plan.version, crypto.randomUUID()))}
+      onRemove={(suggestion) => void mutate(() => archiveDateSuggestion(session.appJwt!, planId, suggestion.id, crypto.randomUUID()), true)}
+    />
     <RecommendationCard recommendations={recommendations} />
     <section className="trip-summary-panel" aria-label="Plan overview">
       <DashboardTile label="Date window" icon="◷" value={plan.starts_on ? `${readableDate(plan.starts_on)} – ${readableDate(plan.ends_on)}` : "Not set"} onClick={() => setDashboardEditor("date")} />
