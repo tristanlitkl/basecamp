@@ -688,11 +688,48 @@ describe("Phase 1B.5 planning UI", () => {
     expect(document.getElementById("travel-window-poll-content")?.hidden).toBe(false);
 
     const css = readFileSync("src/app/plans/[planId]/page.module.css", "utf8");
-    expect(css).toContain("grid-template-columns: minmax(0, 1fr) minmax(340px, .5fr)");
+    expect(css).toContain("grid-template-columns: minmax(0, 1fr) minmax(360px, .54fr)");
     expect(css).toContain(".poll-votes .vote-button) { display: inline-flex");
     expect(css).toContain("@media (max-width: 1160px)");
     expect(css).toContain(".journey-sidebar) { grid-template-columns: 1fr;");
     expect(css).toContain("@media (max-width: 420px)");
+  });
+
+  it("renders one compact Expenses module in the support column without changing expense actions", async () => {
+    await renderPlan();
+
+    const sidebar = document.querySelector("aside.journey-sidebar")!;
+    const primary = document.querySelector(".planning-primary")!;
+    const expenses = document.getElementById("expenses")!;
+    const expense = within(expenses).getByRole("heading", { name: "Lunch" }).closest("article")!;
+
+    expect(sidebar.contains(expenses)).toBe(true);
+    expect(primary.contains(expenses)).toBe(false);
+    expect(document.querySelectorAll("#expenses")).toHaveLength(1);
+    expect(sidebar.contains(screen.getByRole("heading", { name: "Planning status" }))).toBe(true);
+    expect(sidebar.contains(document.getElementById("travel-window-poll")!)).toBe(true);
+    expect(within(expenses).getByRole("button", { name: "+ Add expense" })).toBeTruthy();
+    expect(within(expenses).getByText("1 active expense · $10.01")).toBeTruthy();
+    expect(expense.classList.contains("expense-sidebar-row")).toBe(true);
+    expect(within(expense).getByText("$10.01")).toBeTruthy();
+    expect(within(expense).getByText("Paid by Owner")).toBeTruthy();
+    expect(within(expense).getByText("Owner $5.01 · Member $5.00")).toBeTruthy();
+
+    fireEvent.click(within(expenses).getByRole("button", { name: "Collapse Expenses" }));
+    expect(document.getElementById("expenses-content")?.hidden).toBe(true);
+    fireEvent.click(within(expenses).getByRole("button", { name: "Expand Expenses" }));
+    expect(document.getElementById("expenses-content")?.hidden).toBe(false);
+    fireEvent.click(within(expense).getByRole("button", { name: "Edit" }));
+    fireEvent.click(within(expense).getByRole("button", { name: "Save expense" }));
+    await waitFor(() => expect(patchExpense).toHaveBeenCalled());
+    fireEvent.click(within(expense).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(deleteExpense).toHaveBeenCalledWith("app-jwt", "plan-1", "expense-1", 6, "operation-id"));
+
+    const css = readFileSync("src/app/plans/[planId]/page.module.css", "utf8");
+    expect(css).toContain("minmax(360px, .54fr)");
+    expect(css).toContain(".journey-sidebar .sidebar-expenses");
+    expect(css).toContain(".expense-card-heading");
+    expect(css).toContain("@media (max-width: 1160px)");
   });
 
   it("edits plan-level travel metadata in integer minutes and keeps members read-only", async () => {

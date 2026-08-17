@@ -24,12 +24,11 @@
 .planPage :global(.trip-hero-footer .btn-quiet) { min-height: auto; padding: 2px 0; color: #b9cdf8; }
 .planPage :global(.trip-hero-footer .badge) { border: 0; background: rgb(255 255 255 / 14%); color: white; }
 
-.planPage :global(.planning-workspace) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, .5fr); align-items: start; gap: clamp(32px, 4vw, 64px); margin: 0 0 70px; }
+.planPage :global(.planning-workspace) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, .54fr); align-items: start; gap: clamp(32px, 4vw, 64px); margin: 0 0 70px; }
 .planPage :global(.planning-primary) { display: flex; min-width: 0; flex-direction: column; gap: 52px; }
 .planPage :global(.planning-primary > #itinerary-day-view) { order: -3; }
 .planPage :global(.planning-primary > #trip-ideas) { order: -2; }
 .planPage :global(.planning-primary > .availability-calendar) { order: -1; margin: 0; padding: 30px 0 0; border-top: 1px solid var(--travel-line); }
-.planPage :global(.planning-primary > #expenses) { order: 2; }
 
 .planPage :global(.itinerary-day-view),
 .planPage :global(.section-card) { margin: 0; }
@@ -159,8 +158,31 @@
 .planPage :global(.trip-members-trigger) { padding: 0; }
 .planPage :global(.recommendations .recommendation-list article) { padding: 10px 0; border-bottom: 1px solid var(--travel-line); }
 
-.planPage :global(#expenses) { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-.planPage :global(#expenses > .section-heading) { padding-bottom: 14px; }
+.planPage :global(.journey-sidebar .sidebar-expenses) { min-width: 0; padding: 18px; border: 1px solid #dce4f1; border-radius: 16px; background: linear-gradient(135deg, #fff, #f7f9ff); box-shadow: 0 9px 24px rgb(24 39 77 / 6%); }
+.planPage :global(.journey-sidebar .sidebar-expenses > .section-heading) { align-items: flex-start; margin: 0; padding: 0; }
+.planPage :global(.journey-sidebar .sidebar-expenses .section-heading h2) { color: var(--travel-ink); font-size: 1.05rem; }
+.planPage :global(.sidebar-expenses .disclosure-summary) { margin: 5px 0 0; line-height: 1.4; }
+.planPage :global(.sidebar-expenses .section-controls) { align-items: flex-end; gap: 8px; }
+.planPage :global(.sidebar-expenses .expense-add-button) { min-height: 34px; padding: 6px 9px; font-size: .76rem; white-space: nowrap; }
+.planPage :global(.sidebar-expenses .disclosure-toggle) { min-height: 30px; padding: 4px 0; border: 0; background: transparent; color: var(--travel-cobalt); font-size: .73rem; }
+.planPage :global(.sidebar-expenses .disclosure-content) { padding-top: 14px; }
+.planPage :global(.sidebar-expenses .expenses-list) { display: grid; gap: 10px; }
+.planPage :global(.sidebar-expenses .expense-row) { min-width: 0; padding: 14px; border-color: #e0e7f1; border-radius: 12px; background: #fff; box-shadow: 0 4px 12px rgb(24 39 77 / 4%); }
+.planPage :global(.sidebar-expenses .expense-card-heading) { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.planPage :global(.sidebar-expenses .expense-card-heading h3) { min-width: 0; margin: 0; color: var(--travel-ink); font-size: .98rem; line-height: 1.3; overflow-wrap: anywhere; }
+.planPage :global(.sidebar-expenses .expense-amount) { flex: 0 0 auto; color: var(--travel-ink); font-size: 1rem; line-height: 1.25; white-space: nowrap; }
+.planPage :global(.sidebar-expenses .expense-payer) { margin: 6px 0 0; line-height: 1.4; }
+.planPage :global(.sidebar-expenses .expense-split-summary) { margin: 4px 0 0; color: #51617d; font-size: .75rem; line-height: 1.45; overflow-wrap: anywhere; }
+.planPage :global(.sidebar-expenses .expense-actions) { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+.planPage :global(.sidebar-expenses .expense-actions .btn) { min-height: 32px; padding: 5px 9px; font-size: .74rem; }
+.planPage :global(.sidebar-expenses .expense-create-form) { grid-template-columns: 1fr; gap: 10px; margin: 0 0 12px; padding: 14px; }
+.planPage :global(.sidebar-expenses .expense-create-form .form-span) { grid-column: auto; }
+.planPage :global(.sidebar-expenses .expense-create-form fieldset),
+.planPage :global(.sidebar-expenses .expense-edit-form fieldset) { display: grid; gap: 6px; }
+.planPage :global(.sidebar-expenses .expense-create-form fieldset label),
+.planPage :global(.sidebar-expenses .expense-edit-form fieldset label) { display: flex; align-items: center; gap: 7px; }
+.planPage :global(.sidebar-expenses .expense-edit-form) { display: grid; gap: 10px; margin-top: 13px; padding-top: 13px; border-top: 1px solid #edf0f5; }
+.planPage :global(.sidebar-expenses .expense-edit-form > label) { display: grid; gap: 4px; color: var(--travel-muted); font-size: .75rem; font-weight: 700; }
 
 @media (max-width: 1160px) {
   .planPage :global(.planning-workspace) { grid-template-columns: 1fr; }
@@ -195,6 +217,9 @@
   .planPage :global(#travel-window-poll) { padding: 15px; }
   .planPage :global(#travel-window-poll .travel-window-poll-header) { align-items: flex-start; }
   .planPage :global(#travel-window-poll .date-range) { overflow: visible; text-overflow: clip; white-space: normal; }
+  .planPage :global(.journey-sidebar .sidebar-expenses) { padding: 15px; }
+  .planPage :global(.sidebar-expenses .section-heading) { gap: 10px; }
+  .planPage :global(.sidebar-expenses .section-controls) { align-items: flex-start; }
 }
 
 @media (prefers-reduced-motion: reduce) {
