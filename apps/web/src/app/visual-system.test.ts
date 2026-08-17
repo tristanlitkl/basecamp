@@ -33,10 +33,22 @@ describe("Basecamp visual system", () => {
     expect(styles).toContain(".itinerary-day-view .itinerary-row.is-unscheduled > .itinerary-stop");
   });
 
-  it("retains three distinct visual states for candidate and committed trip ideas", () => {
+  it("uses a single, distinct visual treatment for candidate and selected trip ideas", () => {
+    expect(styles).toContain("#trip-ideas .nested-disclosure {");
+    expect(styles).toContain("padding: 20px 0 0;");
+    expect(styles).toContain("border: 0;");
     expect(styles).toContain("#trip-ideas .activity-card-not-in-itinerary");
-    expect(styles).toContain("border-style: dashed");
-    expect(styles).toContain("#trip-ideas-in-itinerary .activity-card { border-color: #cbd9f4; border-left: 4px solid var(--cobalt);");
+    expect(styles).toContain("border: 1px dashed rgb(220 228 241 / 82%);");
+    expect(styles).toContain("#trip-ideas-in-itinerary .activity-card {");
+    expect(styles).toContain("background: #f4f7ff;");
+    expect(styles).toContain("border-color: transparent;");
     expect(styles).toContain("#trip-ideas-in-itinerary .activity-itinerary-state");
+    expect(styles).not.toContain("border-left: 4px solid var(--cobalt)");
+  });
+
+  it("keeps the discussion divider inside Trip Idea cards", () => {
+    expect(styles).toContain("#trip-ideas details {");
+    expect(styles).toContain("margin: 18px 20px 0;");
+    expect(styles).toContain("border-top: 1px solid rgb(220 228 241 / 82%);");
   });
 });

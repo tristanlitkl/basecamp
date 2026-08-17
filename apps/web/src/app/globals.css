@@ -369,23 +369,8 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
 .calendar-schedule-detail small { color: var(--muted); text-transform: capitalize; }
 .calendar-schedule-detail a { color: var(--cobalt-strong); font-weight: 750; }
 
-/* Plan-detail itinerary treatment: preserve the page's semantic markup while giving planning work a clearer visual rhythm. */
-#trip-ideas {
-  position: relative;
-  overflow: hidden;
-  border-color: rgb(197 209 229 / 76%);
-  background: var(--surface);
-}
-#trip-ideas::before {
-  position: absolute;
-  top: 0;
-  right: 8%;
-  width: 190px;
-  height: 3px;
-  border-radius: 0 0 999px 999px;
-  background: linear-gradient(90deg, var(--cobalt), var(--cyan));
-  content: "";
-}
+/* Trip Ideas uses headings and dividers for hierarchy; cards carry the visual weight. */
+#trip-ideas { background: transparent; }
 #trip-ideas > .section-heading,
 #itinerary > .section-heading {
   margin-bottom: 20px;
@@ -401,27 +386,10 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
   box-shadow: inset 0 1px rgb(255 255 255 / 92%);
 }
 #trip-ideas .nested-disclosure {
-  position: relative;
-  padding: 16px;
-  overflow: hidden;
-  border: 1px solid rgb(220 229 245 / 78%);
-  border-radius: 15px;
-}
-#trip-ideas-not-in-itinerary {
-  background: #fbfcff;
-}
-#trip-ideas-in-itinerary {
-  border-color: #cbd9f4 !important;
-  background: #f8faff !important;
-}
-#trip-ideas-in-itinerary::before {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 4px;
-  height: 100%;
-  background: linear-gradient(var(--cobalt), #7599ee);
-  content: "";
+  padding: 20px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 #trip-ideas .nested-disclosure > .section-heading {
   position: relative;
@@ -454,10 +422,10 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
 #trip-ideas .activity-card {
   padding: 0;
   overflow: hidden;
-  border-color: rgb(220 228 241 / 88%);
+  border-color: rgb(220 228 241 / 82%);
   border-radius: 14px;
   background: var(--surface);
-  box-shadow: var(--shadow-card);
+  box-shadow: 0 5px 16px rgb(24 39 77 / 5%);
 }
 #trip-ideas .activity-card:hover {
   border-color: #afc5ef;
@@ -476,20 +444,19 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
 .editing-presence .presence-avatar { border-color: #f8fbff; box-shadow: 0 1px 4px rgb(24 39 77 / 16%); }
 .itinerary-title-with-presence { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .idea-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-4); }
-#trip-ideas-not-in-itinerary .activity-card { background: #fff; }
-#trip-ideas-not-in-itinerary .activity-itinerary-state { background: #edf3ff; color: var(--cobalt-strong); }
-#trip-ideas-in-itinerary .activity-card { border-left: 4px solid var(--cobalt); background: #fff; box-shadow: 0 8px 20px rgb(49 88 232 / 8%); }
-#trip-ideas-in-itinerary .activity-itinerary-state { background: var(--cobalt-soft); color: var(--cobalt-strong); }
-
 @media (max-width: 760px) {
   .presence-label { display: none; }
   .presence-avatar { width: 24px; height: 24px; }
   .idea-card-grid { grid-template-columns: 1fr; }
 }
 #trip-ideas .activity-card-not-in-itinerary {
-  border-style: dashed;
+  border: 1px dashed rgb(220 228 241 / 82%);
   background: #fff;
-  box-shadow: 0 4px 12px rgb(24 39 77 / 3%);
+  box-shadow: none;
+}
+#trip-ideas .activity-card-not-in-itinerary:hover {
+  border-color: #d3ddeb;
+  box-shadow: 0 5px 14px rgb(24 39 77 / 5%);
 }
 #trip-ideas .activity-card-not-in-itinerary .activity-card-title::after {
   content: "Idea";
@@ -502,7 +469,15 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
   letter-spacing: .03em;
   text-transform: uppercase;
 }
-#trip-ideas-in-itinerary .activity-card { border-color: #cbd9f4; border-left: 4px solid var(--cobalt); background: #fff; box-shadow: 0 8px 20px rgb(49 88 232 / 8%); }
+#trip-ideas-in-itinerary .activity-card {
+  border-color: transparent;
+  background: #f4f7ff;
+  box-shadow: 0 8px 18px rgb(49 88 232 / 10%);
+}
+#trip-ideas-in-itinerary .activity-card:hover {
+  border-color: transparent;
+  box-shadow: 0 10px 22px rgb(49 88 232 / 13%);
+}
 #trip-ideas .activity-card > .split:first-child {
   align-items: flex-start;
   gap: 20px;
@@ -522,14 +497,15 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
   align-items: center;
   min-height: 23px;
   padding: 3px 8px;
-  border: 1px solid #cbd9f4;
+  border: 0;
   border-radius: 999px;
-  background: #f2f6ff;
-  color: var(--cobalt-strong);
+  background: #f1f4f9;
+  color: #5c6b85;
   font-size: .68rem;
   font-weight: 800;
 }
-#trip-ideas .activity-itinerary-state.is-scheduled { border-color: #bcd2fb; background: #edf3ff; color: var(--cobalt-strong); }
+#trip-ideas-in-itinerary .activity-itinerary-state { background: #dce8ff; color: var(--cobalt-strong); }
+#trip-ideas .activity-itinerary-state.is-scheduled { background: #d5e4ff; color: var(--cobalt-strong); }
 #trip-ideas .activity-card .metadata {
   padding: 13px 20px 0;
   gap: 6px;
@@ -551,7 +527,7 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
 }
 #trip-ideas .vote-summary > strong { display: block; color: var(--ink-700); letter-spacing: .005em; }
 #trip-ideas .vote-summary p { max-width: 480px; margin: 5px 0 0; line-height: 1.45; }
-#trip-ideas-in-itinerary .activity-card > .split:nth-of-type(2) { background: #f8faff; }
+#trip-ideas-in-itinerary .activity-card > .split:nth-of-type(2) { background: rgb(255 255 255 / 42%); }
 #trip-ideas .activity-author {
   display: inline-flex;
   align-items: center;
@@ -611,10 +587,10 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
 #trip-ideas .vote-button.no.selected { box-shadow: inset 0 0 0 1px currentColor, 0 3px 8px rgb(189 51 65 / 10%); }
 #trip-ideas .vote-button.maybe.selected { box-shadow: inset 0 0 0 1px currentColor, 0 3px 8px rgb(168 97 5 / 10%); }
 #trip-ideas details {
-  margin: 0;
-  padding: 14px 20px 18px;
-  border-top-color: #e8edf5;
-  background: rgb(251 253 255 / 85%);
+  margin: 18px 20px 0;
+  padding: 14px 0 18px;
+  border-top: 1px solid rgb(220 228 241 / 82%);
+  background: transparent;
 }
 #trip-ideas summary {
   display: flex;
