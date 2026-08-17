@@ -41,15 +41,16 @@ describe("Basecamp visual system", () => {
     expect(planPageStyles).toContain("#trip-ideas .activity-card-not-in-itinerary) { border: 0;");
     expect(planPageStyles).not.toContain("activity-card-not-in-itinerary) { border: 1px dashed");
     expect(planPageStyles).toContain("#trip-ideas .activity-card-in-itinerary) { position: relative; border: 0;");
-    expect(planPageStyles).toContain("activity-card-in-itinerary::before) { position: absolute;");
-    expect(planPageStyles).toContain("top: 10px; bottom: 10px; left: 10px; width: 4px;");
-    expect(planPageStyles).toContain("activity-card-in-itinerary > *) { position: relative; z-index: 1; }");
+    expect(planPageStyles).toContain("activity-card-content) { padding: 28px 30px 10px; }");
+    expect(planPageStyles).toContain("activity-card-in-itinerary .activity-card-content) { padding-left: 40px; }");
+    expect(planPageStyles).toContain("activity-card-in-itinerary .activity-card-accent) { position: absolute;");
+    expect(planPageStyles).toContain("top: 0; bottom: 0; left: -28px; display: block; width: 4px;");
     expect(planPageStyles).not.toContain("activity-card-in-itinerary) { border: 1px");
     expect(planPageStyles).not.toContain("border-left: 4px solid var(--travel-cobalt)");
   });
 
   it("keeps the discussion divider inside Trip Idea cards", () => {
-    expect(planPageStyles).toContain("#trip-ideas details) { margin: 18px 24px 0;");
+    expect(planPageStyles).toContain("#trip-ideas details) { margin: 20px 0 0;");
     expect(planPageStyles).toContain("border-top: 1px solid #e8edf4;");
   });
 });
