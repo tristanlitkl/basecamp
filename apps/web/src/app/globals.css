@@ -420,6 +420,7 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
   background: var(--cobalt-soft);
 }
 #trip-ideas .activity-card {
+  position: relative;
   padding: 0;
   overflow: hidden;
   border-color: rgb(220 228 241 / 82%);
@@ -430,6 +431,9 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
 #trip-ideas .activity-card:hover {
   border-color: #afc5ef;
   box-shadow: 0 10px 24px rgb(35 63 119 / 9%);
+}
+#trip-ideas .activity-card-content {
+  padding: 22px 24px 24px;
 }
 
 /* Ephemeral, authenticated room presence is intentionally compact and never stored. */
@@ -473,15 +477,24 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
   background: #f4f7ff;
   box-shadow: 0 8px 18px rgb(49 88 232 / 10%);
 }
+#trip-ideas-in-itinerary .activity-card::before {
+  position: absolute;
+  top: 18px;
+  bottom: 18px;
+  left: 0;
+  width: 4px;
+  border-radius: 0 999px 999px 0;
+  background: var(--cobalt);
+  content: "";
+}
+#trip-ideas-in-itinerary .activity-card-content { padding-left: 32px; }
 #trip-ideas-in-itinerary .activity-card:hover {
   border-color: transparent;
   box-shadow: 0 10px 22px rgb(49 88 232 / 13%);
 }
-#trip-ideas .activity-card > .split:first-child {
+#trip-ideas .activity-card-header {
   align-items: flex-start;
-  gap: 20px;
-  padding: 19px 20px 16px;
-  border-bottom-color: #e5ebf4;
+  gap: 24px;
 }
 #trip-ideas .activity-card h3 {
   margin-bottom: 6px;
@@ -506,27 +519,25 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
 #trip-ideas-in-itinerary .activity-itinerary-state { background: #dce8ff; color: var(--cobalt-strong); }
 #trip-ideas .activity-itinerary-state.is-scheduled { background: #d5e4ff; color: var(--cobalt-strong); }
 #trip-ideas .activity-card .metadata {
-  padding: 13px 20px 0;
+  margin-top: 18px;
   gap: 6px;
 }
 #trip-ideas .activity-card .metadata + .small {
-  margin: 12px 20px 0;
+  margin: 16px 0 0;
   padding: 10px 12px;
   border-radius: 9px;
   background: #f6f8fd;
   color: var(--ink-700);
 }
-#trip-ideas .activity-card > .split:nth-of-type(2) {
+#trip-ideas .activity-voting {
   align-items: flex-end;
   gap: 18px;
-  margin-top: 16px;
-  padding: 15px 20px 18px;
+  margin-top: 22px;
+  padding: 20px 0 0;
   border-top: 1px solid #e8edf5;
-  background: linear-gradient(90deg, #fbfcff, #f5f8ff);
 }
 #trip-ideas .vote-summary > strong { display: block; color: var(--ink-700); letter-spacing: .005em; }
 #trip-ideas .vote-summary p { max-width: 480px; margin: 5px 0 0; line-height: 1.45; }
-#trip-ideas-in-itinerary .activity-card > .split:nth-of-type(2) { background: rgb(255 255 255 / 42%); }
 #trip-ideas .activity-author {
   display: inline-flex;
   align-items: center;
@@ -553,13 +564,13 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
 }
 #trip-ideas .activity-card .cluster { justify-content: flex-end; }
 #trip-ideas .activity-card .btn { min-height: 36px; padding: 7px 11px; font-size: .78rem; }
-#trip-ideas .activity-card > .split:first-child .cluster > .btn:first-child:not(:disabled) {
+#trip-ideas .activity-card-header .cluster > .btn:first-child:not(:disabled) {
   border-color: var(--cobalt);
   background: var(--cobalt);
   color: white;
   box-shadow: 0 5px 12px rgb(49 88 232 / 16%);
 }
-#trip-ideas .activity-card > .split:first-child .cluster > .btn:first-child:hover:not(:disabled) { background: var(--cobalt-strong); }
+#trip-ideas .activity-card-header .cluster > .btn:first-child:hover:not(:disabled) { background: var(--cobalt-strong); }
 #trip-ideas .vote-control {
   display: inline-flex;
   gap: 3px;
@@ -586,8 +597,8 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
 #trip-ideas .vote-button.no.selected { box-shadow: inset 0 0 0 1px currentColor, 0 3px 8px rgb(189 51 65 / 10%); }
 #trip-ideas .vote-button.maybe.selected { box-shadow: inset 0 0 0 1px currentColor, 0 3px 8px rgb(168 97 5 / 10%); }
 #trip-ideas details {
-  margin: 18px 20px 0;
-  padding: 14px 0 18px;
+  margin: 24px 0 0;
+  padding: 20px 0 0;
   border-top: 1px solid rgb(220 228 241 / 82%);
   background: transparent;
 }
@@ -859,8 +870,8 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
   .itinerary-day-view .itinerary-row > .itinerary-stop { padding: 13px; }
   .itinerary-day-view .itinerary-row > .itinerary-stop > .split:first-child { gap: 10px; }
   .itinerary-day-view .itinerary-actions { justify-content: flex-start; }
-  #trip-ideas .activity-card > .split:first-child,
-  #trip-ideas .activity-card > .split:nth-of-type(2) { align-items: stretch; }
+  #trip-ideas .activity-card-header,
+  #trip-ideas .activity-voting { align-items: stretch; }
   #trip-ideas .activity-card-actions { justify-content: flex-start; }
   #trip-ideas .vote-control { align-self: flex-start; }
 }
@@ -897,6 +908,8 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
   .stat { padding: var(--space-3); }
   .form-span { grid-column: auto; }
   .section-card, .card-pad { padding: 17px; }
+  #trip-ideas .activity-card-content { padding: 20px; }
+  #trip-ideas-in-itinerary .activity-card-content { padding-left: 26px; }
   .section-heading, .disclosure-heading { align-items: flex-start; flex-direction: column; }
   .section-controls { justify-content: flex-start; }
   .plan-actions { justify-content: flex-start; }
