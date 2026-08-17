@@ -450,13 +450,12 @@ summary { color: var(--ink-700); font-weight: 750; cursor: pointer; }
   .idea-card-grid { grid-template-columns: 1fr; }
 }
 #trip-ideas .activity-card-not-in-itinerary {
-  border: 1px dashed rgb(220 228 241 / 82%);
+  border: 0;
   background: #fff;
-  box-shadow: none;
+  box-shadow: 0 5px 16px rgb(24 39 77 / 5%);
 }
 #trip-ideas .activity-card-not-in-itinerary:hover {
-  border-color: #d3ddeb;
-  box-shadow: 0 5px 14px rgb(24 39 77 / 5%);
+  box-shadow: 0 10px 24px rgb(24 39 77 / 9%);
 }
 #trip-ideas .activity-card-not-in-itinerary .activity-card-title::after {
   content: "Idea";

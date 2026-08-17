@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const styles = readFileSync("src/app/globals.css", "utf8");
+const planPageStyles = readFileSync("src/app/plans/[planId]/page.module.css", "utf8");
 
 describe("Basecamp visual system", () => {
   it("centralizes the command-strip, surface, motion, and focus tokens", () => {
@@ -34,21 +35,21 @@ describe("Basecamp visual system", () => {
   });
 
   it("uses a single, distinct visual treatment for candidate and selected trip ideas", () => {
-    expect(styles).toContain("#trip-ideas .nested-disclosure {");
-    expect(styles).toContain("padding: 20px 0 0;");
-    expect(styles).toContain("border: 0;");
-    expect(styles).toContain("#trip-ideas .activity-card-not-in-itinerary");
-    expect(styles).toContain("border: 1px dashed rgb(220 228 241 / 82%);");
-    expect(styles).toContain("#trip-ideas-in-itinerary .activity-card {");
-    expect(styles).toContain("background: #f4f7ff;");
-    expect(styles).toContain("border-color: transparent;");
-    expect(styles).toContain("#trip-ideas-in-itinerary .activity-itinerary-state");
-    expect(styles).not.toContain("border-left: 4px solid var(--cobalt)");
+    expect(planPageStyles).toContain("#trip-ideas .nested-disclosure) { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none;");
+    expect(styles).toContain("#trip-ideas .activity-card-not-in-itinerary {");
+    expect(styles).not.toContain("border: 1px dashed rgb(220 228 241 / 82%);");
+    expect(planPageStyles).toContain("#trip-ideas .activity-card-not-in-itinerary) { border: 0;");
+    expect(planPageStyles).not.toContain("activity-card-not-in-itinerary) { border: 1px dashed");
+    expect(planPageStyles).toContain("#trip-ideas .activity-card-in-itinerary) { position: relative; border: 0;");
+    expect(planPageStyles).toContain("activity-card-in-itinerary::before) { position: absolute;");
+    expect(planPageStyles).toContain("top: 10px; bottom: 10px; left: 10px; width: 4px;");
+    expect(planPageStyles).toContain("activity-card-in-itinerary > *) { position: relative; z-index: 1; }");
+    expect(planPageStyles).not.toContain("activity-card-in-itinerary) { border: 1px");
+    expect(planPageStyles).not.toContain("border-left: 4px solid var(--travel-cobalt)");
   });
 
   it("keeps the discussion divider inside Trip Idea cards", () => {
-    expect(styles).toContain("#trip-ideas details {");
-    expect(styles).toContain("margin: 18px 20px 0;");
-    expect(styles).toContain("border-top: 1px solid rgb(220 228 241 / 82%);");
+    expect(planPageStyles).toContain("#trip-ideas details) { margin: 18px 24px 0;");
+    expect(planPageStyles).toContain("border-top: 1px solid #e8edf4;");
   });
 });
